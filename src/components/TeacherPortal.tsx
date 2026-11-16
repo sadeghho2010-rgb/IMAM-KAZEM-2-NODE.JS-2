@@ -32,6 +32,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
 import { localDb, CollectionName } from '../lib/localDb';
 import { emitSaveConfirmation } from '../lib/saveFeedback';
+import AnnouncementCenter from './common/AnnouncementCenter';
 import { 
   Teacher, 
   Program, 
@@ -55,7 +56,7 @@ import {
   dateToShamsi,
   normalizeShamsiDateStr
 } from '../lib/jalali';
-import { cn, getProgramDays } from '../lib/utils';
+import { cn, getProgramDays, getProgramRoomsSummary } from '../lib/utils';
 import { 
   normalizeTeacherName, 
   findMatchingTeacher, 
@@ -863,6 +864,9 @@ export default function TeacherPortal() {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Announcements Bell & Startup Popup */}
+            <AnnouncementCenter variant="dark-portal" />
+
             {/* Sync / Refresh Button */}
             <button
               onClick={() => syncPortalData(true)}
@@ -1041,7 +1045,7 @@ export default function TeacherPortal() {
 
                           <div className="flex items-center gap-1.5 text-slate-700 font-bold bg-slate-50 p-2.5 rounded-xl border border-slate-100">
                             <DoorOpen size={14} className="text-amber-600 shrink-0" />
-                            <span className="truncate">{prog.madrasRoom || 'مدرس نامشخص'}</span>
+                            <span className="truncate">{getProgramRoomsSummary(prog) || 'مدرس نامشخص'}</span>
                           </div>
                         </div>
 

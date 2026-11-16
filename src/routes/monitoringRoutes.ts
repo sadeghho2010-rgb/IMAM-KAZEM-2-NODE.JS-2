@@ -5,7 +5,7 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { requireMonitoringAccess } from '../config/monitoringAccess';
+import { requireMonitoringAccess, requireMaintenanceAccess } from '../config/monitoringAccess';
 import { 
   recordMonitoringEvent, 
   runMonitoringPurge 
@@ -151,36 +151,38 @@ router.post('/purge', requireMonitoringAccess, async (_req: Request, res: Respon
 /**
  * GET /api/monitor/maintenance
  * Gets current maintenance state
- * Strict access: Super Admin, Education Manager, Finance Manager
+ * Strict access: Super Admin & Education Officer only
  */
-router.get('/maintenance', requireMonitoringAccess, async (_req: Request, res: Response) => {
-  const { getMaintenanceState } = await import('../lib/serverMaintenance');
-  return res.json({ success: true, state: getMaintenanceState() });
+router.get('/maintenance', requireMaintenanceAccess, async (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  const { ensureMaintenanceLoadedFromDb } = await import('../lib/serverMaintenance');
+  const state = await ensureMaintenanceLoadedFromDb(true);
+  return res.json({ success: true, state });
 });
 
 /**
  * POST /api/monitor/maintenance
  * Toggle maintenance mode on or off
- * Strict access: Super Admin, Education Manager, Finance Manager
+ * Strict access: Super Admin & Education Officer only
  * Logs to audit_logs
  */
-router.post('/maintenance', requireMonitoringAccess, async (req: Request, res: Response) => {
+router.post('/maintenance', requireMaintenanceAccess, async (req: Request, res: Response) => {
   try {
     const { enabled, message, estimatedDuration } = req.body || {};
     const { setMaintenanceState } = await import('../lib/serverMaintenance');
     const { logServerAudit } = await import('../lib/serverAuth');
 
-    const caller = (req as any).monitoringCaller || {};
+    const caller = (req as any).monitoringUser || {};
     const operatorName = caller.name || caller.username || 'مدیر سامانه';
 
-    const newState = setMaintenanceState(
+    const newState = await setMaintenanceState(
       Boolean(enabled),
       operatorName,
       message,
       estimatedDuration
     );
 
-    // Record action into audit_logs (Rule 6)
+    // Record action into audit_logs
     await logServerAudit({
       userId: caller.id || 'admin',
       username: caller.username || 'admin',
@@ -189,7 +191,7 @@ router.post('/maintenance', requireMonitoringAccess, async (req: Request, res: R
       entityType: 'system_settings',
       entityId: 'maintenance_mode',
       description: enabled
-        ? `فعال‌سازی حالت تعمیر و بروزرسانی سامانه توسط ${operatorName} (پیام: ${message || 'پیش‌فرض'})`
+        ? `فعال‌سازی حالت تعمیر و نگهداری سامانه توسط ${operatorName} (پیام: ${message || 'پیش‌فرض'})`
         : `غیرفعال‌سازی حالت تعمیر و بازگشایی سامانه توسط ${operatorName}`,
       newState
     });
@@ -200,6 +202,7 @@ router.post('/maintenance', requireMonitoringAccess, async (req: Request, res: R
       state: newState
     });
   } catch (err: any) {
+    console.error('[STORAGE_FAILURE][monitor/maintenance]', err?.message || err);
     return res.status(500).json({ success: false, message: err?.message || 'خطا در تغییر حالت تعمیر' });
   }
 });

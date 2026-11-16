@@ -14,6 +14,7 @@ import { localDb } from '../../../lib/localDb';
 import { cn } from '../../../lib/utils';
 import { getTodayShamsi, getShamsiDayOfWeekName } from '../../../lib/jalali';
 import { PWAInstallButton } from '../../PWAInstallButton';
+import AnnouncementCenter from '../../common/AnnouncementCenter';
 import {
   GlyphHome,
   GlyphStudyBook,
@@ -347,6 +348,7 @@ export const StudentMobileShell: React.FC<StudentMobileShellProps> = ({
 
         {/* Left side: Quick actions */}
         <div className="flex items-center gap-1.5 shrink-0">
+          <AnnouncementCenter variant="mobile" />
           <PWAInstallButton variant="header" />
 
           {isTabAllowed('student-requests') && pendingRequestsCount > 0 && isDashboard && (

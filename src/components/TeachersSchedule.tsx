@@ -36,7 +36,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Program, Teacher, MadrasRoom, TeacherManualSchedule } from '../types';
 import { localDb } from '../lib/localDb';
 import { useAuth } from '../context/AuthContext';
-import { cn, WEEK_DAYS, getProgramDays } from '../lib/utils';
+import { cn, WEEK_DAYS, getProgramDays, getProgramRoomForDay, getProgramRoomsSummary } from '../lib/utils';
 import { exportElementToPdf } from '../lib/pdfExport';
 import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
 import { MobileSectionHeader, MobileHorizontalTabs, MobileSearchFilterBar } from './admin/mobile/MobileModulePrimitives';
@@ -79,6 +79,7 @@ export interface ScheduledCourseItem {
   days: string[];
   time: string;
   madrasRoom: string;
+  dailyMadrasRooms?: Record<string, string>;
   type: string;
   isManual: boolean;
   notes?: string;
@@ -430,7 +431,8 @@ export default function TeachersSchedule() {
         grade: p.grade || 'نامشخص',
         days: getProgramDays(p),
         time: p.time || 'نامشخص',
-        madrasRoom: p.madrasRoom || p.classroom || 'نامشخص',
+        madrasRoom: getProgramRoomsSummary(p) || p.madrasRoom || p.classroom || 'نامشخص',
+        dailyMadrasRooms: p.dailyMadrasRooms,
         type: p.type || 'اصلی',
         isManual: false
       });
@@ -1921,12 +1923,16 @@ export default function TeachersSchedule() {
                                 <Clock size={12} className="text-indigo-500" />
                                 <span>{c.time}</span>
                               </span>
-                              {c.madrasRoom && c.madrasRoom !== 'نامشخص' && (
-                                <span className="flex items-center gap-1 text-emerald-800">
-                                  <DoorOpen size={12} />
-                                  <span>مَدرَس: {c.madrasRoom}</span>
-                                </span>
-                              )}
+                              {(() => {
+                                const dayRoom = getProgramRoomForDay(c, mobileScheduleDay) || c.madrasRoom;
+                                if (!dayRoom || dayRoom === 'نامشخص') return null;
+                                return (
+                                  <span className="flex items-center gap-1 text-emerald-800">
+                                    <DoorOpen size={12} />
+                                    <span>مَدرَس: {dayRoom}</span>
+                                  </span>
+                                );
+                              })()}
                             </div>
                             {c.notes && (
                               <p className="text-[10px] text-slate-500 font-medium pt-1 border-t border-indigo-100">
@@ -2003,12 +2009,16 @@ export default function TeachersSchedule() {
                                         <span>{c.time}</span>
                                       </div>
 
-                                      {c.madrasRoom && c.madrasRoom !== 'نامشخص' && (
-                                        <div className="flex items-center gap-1 text-[11px] text-emerald-800 font-bold">
-                                          <DoorOpen size={12} />
-                                          <span>مَدرَس: {c.madrasRoom}</span>
-                                        </div>
-                                      )}
+                                      {(() => {
+                                        const dayRoom = getProgramRoomForDay(c, day) || c.madrasRoom;
+                                        if (!dayRoom || dayRoom === 'نامشخص') return null;
+                                        return (
+                                          <div className="flex items-center gap-1 text-[11px] text-emerald-800 font-bold">
+                                            <DoorOpen size={12} />
+                                            <span>مَدرَس: {dayRoom}</span>
+                                          </div>
+                                        );
+                                      })()}
 
                                       {c.notes && (
                                         <p className="text-[10px] text-slate-500 font-medium pt-1 border-t border-indigo-100">

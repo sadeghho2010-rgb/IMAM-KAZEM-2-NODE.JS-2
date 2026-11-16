@@ -33,7 +33,7 @@ import { Student, Program, Enrollment, CustomStudentSchedule, Teacher } from '..
 import { localDb } from '../lib/localDb';
 import { useMentor, getStudentMentorKey } from '../context/MentorContext';
 import { useAuth } from '../context/AuthContext';
-import { cn, WEEK_DAYS, getProgramDays } from '../lib/utils';
+import { cn, WEEK_DAYS, getProgramDays, getProgramRoomForDay, getProgramRoomsSummary } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { exportElementToPdf } from '../lib/pdfExport';
 import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
@@ -919,10 +919,10 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
                                       <User size={11} /> {prog.teacher || 'استاد ثبت‌نشده'}
                                     </span>
                                   </div>
-                                  {(prog.madrasRoom || prog.classroom) && (
+                                  {getProgramRoomForDay(prog, dayName) && (
                                     <div className="flex items-center gap-1 text-[10px] font-bold">
                                       <DoorOpen size={11} className={prog.type === 'اصلی' ? 'text-indigo-300' : 'text-slate-500'} />
-                                      <span>مَدرَس: {prog.madrasRoom || prog.classroom}</span>
+                                      <span>مَدرَس: {getProgramRoomForDay(prog, dayName)}</span>
                                     </div>
                                   )}
                                   {getTeacherPhone(prog.teacher) && (
@@ -1039,10 +1039,10 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
                                 )}
                               </div>
                               <div className="flex items-center gap-2">
-                                {(p.madrasRoom || p.classroom) && (
+                                {getProgramRoomsSummary(p) && (
                                   <span className="flex items-center gap-1 text-indigo-800 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100 text-[10px]">
                                     <DoorOpen size={10} />
-                                    <span>مَدرَس: {p.madrasRoom || p.classroom}</span>
+                                    <span>مَدرَس: {getProgramRoomsSummary(p)}</span>
                                   </span>
                                 )}
                                 <span>زمان: {p.day || ''} {p.time || ''}</span>
@@ -1088,10 +1088,10 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
                                 )}
                               </div>
                               <div className="flex items-center gap-2">
-                                {(p.madrasRoom || p.classroom) && (
+                                {getProgramRoomsSummary(p) && (
                                   <span className="flex items-center gap-1 text-amber-900 bg-amber-100/80 px-2 py-0.5 rounded-md border border-amber-200 text-[10px]">
                                     <DoorOpen size={10} />
-                                    <span>مَدرَس: {p.madrasRoom || p.classroom}</span>
+                                    <span>مَدرَس: {getProgramRoomsSummary(p)}</span>
                                   </span>
                                 )}
                                 <span>زمان: {p.day || ''} {p.time || ''}</span>
@@ -1145,10 +1145,10 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
                                 )}
                               </div>
                               <div className="flex items-center gap-2">
-                                {(p.madrasRoom || p.classroom) && (
+                                {getProgramRoomsSummary(p) && (
                                   <span className="flex items-center gap-1 text-emerald-900 bg-emerald-100/80 px-2 py-0.5 rounded-md border border-emerald-200 text-[10px]">
                                     <DoorOpen size={10} />
-                                    <span>مَدرَس: {p.madrasRoom || p.classroom}</span>
+                                    <span>مَدرَس: {getProgramRoomsSummary(p)}</span>
                                   </span>
                                 )}
                                 <span>زمان: {p.day || ''} {p.time || ''}</span>

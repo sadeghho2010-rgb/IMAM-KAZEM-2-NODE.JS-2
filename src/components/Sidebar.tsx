@@ -43,7 +43,9 @@ import {
   Sliders,
   HeartPulse,
   CalendarCheck,
-  Lock
+  Lock,
+  Megaphone,
+  Wrench
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -91,7 +93,8 @@ export const MENU_CATEGORIES: MenuCategoryDef[] = [
       'oral-exams',
       'academic-calendar',
       'held-sessions',
-      'teachers-bank'
+      'teachers-bank',
+      'announcements-management'
     ]
   },
   {
@@ -155,6 +158,7 @@ export const MENU_CATEGORIES: MenuCategoryDef[] = [
       'app-logs',
       'db-save-errors',
       'anomaly-detection',
+      'maintenance-mode',
       'db-connection-test'
     ]
   }
@@ -215,6 +219,8 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'system-health', label: 'سلامت سیستم', icon: HeartPulse },
   { id: 'system-audit-logs', label: 'لاگ‌های سیستم', icon: FileText },
   { id: 'held-sessions', label: 'تعداد جلسات برگزار شده', icon: CalendarCheck },
+  { id: 'announcements-management', label: 'مدیریت اطلاعیه‌ها', icon: Megaphone },
+  { id: 'maintenance-mode', label: 'حالت تعمیر سایت', icon: Wrench },
   { id: 'student-access-management', label: 'مدیریت دسترسی بخش‌های طلاب', icon: Lock },
 ];
 
@@ -229,7 +235,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onToggle, onO
     }
   };
   const [isSiteManagementOpen, setIsSiteManagementOpen] = React.useState<boolean>(() => {
-    return ['backup', 'user-credentials', 'audit-logs', 'app-logs', 'anomaly-detection', 'system-health'].includes(activeTab);
+    return ['backup', 'user-credentials', 'audit-logs', 'app-logs', 'anomaly-detection', 'system-health', 'maintenance-mode'].includes(activeTab);
   });
   const [expandedCategoryId, setExpandedCategoryId] = React.useState<string | null>(() => {
     const activeCat = MENU_CATEGORIES.find(cat => cat.itemIds.includes(activeTab));
@@ -392,7 +398,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onToggle, onO
   }, [currentUser]);
 
   React.useEffect(() => {
-    if (['backup', 'user-credentials', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection', 'system-health'].includes(activeTab)) {
+    if (['backup', 'user-credentials', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection', 'system-health', 'maintenance-mode'].includes(activeTab)) {
       setIsSiteManagementOpen(true);
     }
   }, [activeTab]);
@@ -400,6 +406,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onToggle, onO
   const siteManagementSubItems = [
     { id: 'security-pin-settings', label: 'افزایش سطح امنیتی حساب', icon: KeyRound },
     { id: 'student-access-management', label: 'مدیریت دسترسی بخش‌های طلاب', icon: Lock },
+    { id: 'maintenance-mode', label: 'حالت تعمیر سایت', icon: Wrench },
     { id: 'anomaly-detection', label: 'تشخیص ناهنجاری‌ها و رولبک', icon: ShieldAlert, badge: unresolvedAnomaliesCount },
     { id: 'backup', label: 'پشتیبان‌گیری از دیتابیس', icon: HardDrive },
     { id: 'system-health', label: 'سلامت سیستم', icon: HeartPulse },
@@ -454,14 +461,14 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onToggle, onO
     }
 
     // When site management dropdown is active and this item is inside it, hide its sub-items from top level
-    if (canAccessSiteManagement && ['security-pin-settings', 'backup', 'user-credentials', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection', 'db-connection-test', 'system-health'].includes(item.id)) {
+    if (canAccessSiteManagement && ['security-pin-settings', 'backup', 'user-credentials', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection', 'db-connection-test', 'system-health', 'maintenance-mode'].includes(item.id)) {
       return false;
     }
 
     return true;
   });
 
-  const isSiteManagementActive = ['security-pin-settings', 'backup', 'user-credentials', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection', 'db-connection-test', 'system-health'].includes(activeTab);
+  const isSiteManagementActive = ['security-pin-settings', 'backup', 'user-credentials', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection', 'db-connection-test', 'system-health', 'maintenance-mode'].includes(activeTab);
 
   const renderMenuItem = (item: MenuItemDef) => {
     const Icon = item.icon;

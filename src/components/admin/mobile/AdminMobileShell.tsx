@@ -16,6 +16,7 @@ import { localDb } from '../../../lib/localDb';
 import { cn } from '../../../lib/utils';
 import { getTodayShamsi, getShamsiDayOfWeekName } from '../../../lib/jalali';
 import { PWAInstallButton } from '../../PWAInstallButton';
+import AnnouncementCenter from '../../common/AnnouncementCenter';
 import { AdminMobileProvider } from './AdminMobileContext';
 import {
   GlyphAdminHome,
@@ -75,6 +76,7 @@ const ALL_ADMIN_DRAWER_MODULES: AdminDrawerModuleItem[] = [
   { tabId: 'held-sessions', title: 'تعداد جلسات برگزار شده', subtitle: 'گزارش جلسات اصلی، جایگزین و لغو', icon: GlyphAttendanceShield, accentClass: 'bg-emerald-50 text-emerald-700 border-emerald-200', category: 'education' },
   { tabId: 'passed-courses', title: 'دروس گذرانده شده', subtitle: 'کارنامه و تطبیق دروس', icon: GlyphTeachersCap, accentClass: 'bg-green-50 text-green-700 border-green-200', category: 'education' },
   { tabId: 'academic-calendar', title: 'تقویم آموزشی', subtitle: 'تعطیلات و زمان‌بندی ترم‌ها', icon: GlyphProgramsBook, accentClass: 'bg-purple-50 text-purple-700 border-purple-200', category: 'education' },
+  { tabId: 'announcements-management', title: 'مدیریت اطلاعیه‌ها', subtitle: 'ایجاد و فعال‌سازی اطلاعیه‌های پاپ‌آپ', icon: GlyphRequestsInbox, accentClass: 'bg-indigo-50 text-indigo-700 border-indigo-200', category: 'education' },
 
   // Requests & Workflow (کارتابل)
   { tabId: 'student-requests', title: 'رسیدگی به درخواست‌ها', subtitle: 'پاسخ‌دهی به تقاضاهای طلاب', icon: GlyphRequestsInbox, accentClass: 'bg-rose-50 text-rose-700 border-rose-200', category: 'requests' },
@@ -114,6 +116,7 @@ const ALL_ADMIN_DRAWER_MODULES: AdminDrawerModuleItem[] = [
   { tabId: 'system-audit-logs', title: 'پایش جامع تراکنش‌ها', subtitle: 'گزارش ورودها و تغییرات دیتابیس', icon: GlyphSecurityLock, accentClass: 'bg-indigo-50 text-indigo-700 border-indigo-200', category: 'system' },
   { tabId: 'db-save-errors', title: 'خطاهای ثبت دیتابیس', subtitle: 'بررسی علل خطاهای ذخیره‌سازی', icon: GlyphSecurityLock, accentClass: 'bg-rose-50 text-rose-700 border-rose-200', category: 'system' },
   { tabId: 'db-connection-test', title: 'تست اتصال دیتابیس', subtitle: 'بررسی سلامت ارتباط و همگام‌سازی', icon: GlyphSecurityLock, accentClass: 'bg-cyan-50 text-cyan-700 border-cyan-200', category: 'system' },
+  { tabId: 'maintenance-mode', title: 'حالت تعمیر سایت', subtitle: 'بستن موقت سامانه برای کاربران عادی', icon: GlyphSecurityLock, accentClass: 'bg-amber-50 text-amber-700 border-amber-200', category: 'system' },
 ];
 
 export const AdminMobileShell: React.FC<AdminMobileShellProps> = ({
@@ -340,6 +343,7 @@ export const AdminMobileShell: React.FC<AdminMobileShellProps> = ({
 
         {/* Left Quick Actions */}
         <div className="flex items-center gap-1.5 shrink-0">
+          <AnnouncementCenter variant="mobile" />
           <PWAInstallButton variant="header" />
 
           {isTabAllowed('student-requests') && pendingCount > 0 && isDashboard && (

@@ -478,6 +478,7 @@ export interface Program {
   teacher?: string;
   madrasRoom?: string; // مَدرَس (کلاس درس)
   classroom?: string;  // مَدرَس (نام یا شناسه کلاس درس)
+  dailyMadrasRooms?: Record<string, string>; // مَدرَس مجزا به تفکیک هر روز هفته (مثلاً {'شنبه': 'مدرس ۱', 'دوشنبه': 'مدرس ۲'})
   grade?: string;      // پایه تحصیلی مربوطه
   capacity?: number;
   notes?: string;
@@ -2359,6 +2360,45 @@ export interface StudentCourseProgress {
   notes?: string;
   programId?: string;       // linked program if in_progress
   updatedAt: string;
+}
+
+export type AnnouncementPriority = 'normal' | 'important' | 'urgent';
+export type AnnouncementAudience = 'all' | 'students' | 'teachers' | 'staff';
+
+export interface Announcement {
+  id: string;
+  title: string;
+  message: string;
+  priority: AnnouncementPriority;
+  targetAudience: AnnouncementAudience;
+  isActive: boolean;
+  createdAt: string;
+  createdBy?: string;
+  createdByName?: string;
+  updated_at?: string;
+  version?: number;
+}
+
+export interface AnnouncementDismissal {
+  id: string; // `${announcementId}__${userKey}`
+  announcementId: string;
+  userId?: string;
+  studentId?: string;
+  username?: string;
+  dismissedAt: string;
+  updated_at?: string;
+  version?: number;
+}
+
+export interface MaintenanceConfig {
+  id?: string;
+  enabled: boolean;
+  message: string;
+  estimatedDuration?: string | null;
+  enabledAt?: string | null;
+  enabledBy?: string | null;
+  updated_at?: string;
+  version?: number;
 }
 
 

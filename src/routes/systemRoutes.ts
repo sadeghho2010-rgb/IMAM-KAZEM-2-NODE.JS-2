@@ -172,4 +172,182 @@ router.get('/db-status', async (_req: Request, res: Response) => {
   });
 });
 
+/**
+ * GET /api/system/maintenance-status
+ * Public/Authenticated probe returning current maintenance status (always accessible even when maintenance is ON).
+ */
+router.get('/maintenance-status', async (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  try {
+    const { ensureMaintenanceLoadedFromDb } = await import('../lib/serverMaintenance');
+    const state = await ensureMaintenanceLoadedFromDb();
+    return res.json({
+      success: true,
+      enabled: Boolean(state.enabled),
+      message: state.message,
+      estimatedDuration: state.estimatedDuration,
+      enabledAt: state.enabledAt,
+      enabledBy: state.enabledBy,
+      version: state.version || 1,
+      updated_at: state.updated_at
+    });
+  } catch (err: any) {
+    console.error('[STORAGE_FAILURE][maintenance-status]', err?.message || err);
+    return res.status(500).json({ success: false, message: err?.message || 'خطا در بررسی وضعیت تعمیر سایت' });
+  }
+});
+
+function doesAnnouncementMatchUserAudience(announcement: any, user: any): boolean {
+  const audience = String(announcement?.targetAudience || 'all');
+  if (audience === 'all') return true;
+  if (!user) return false;
+  const role = String(user.role || '');
+  const level = Number(user.level) || 0;
+  if (audience === 'students') {
+    return (level === 3 || role === 'student' || role === 'class_representative') && role !== 'teacher';
+  }
+  if (audience === 'teachers') {
+    return role === 'teacher';
+  }
+  if (audience === 'staff') {
+    return level === 1 || level === 2 || role === 'super_admin' || role === 'education_manager' || role === 'education_officer' || role === 'finance_manager' || role === 'grade_mentor' || role === 'research_manager';
+  }
+  return true;
+}
+
+/**
+ * GET /api/system/announcements/active
+ * Authoritative read of active announcements targeted to the caller + caller's permanent dismissals.
+ */
+router.get('/announcements/active', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  try {
+    const token = extractToken(req);
+    if (!token) {
+      return res.status(401).json({ success: false, message: 'احراز هویت الزامی است.' });
+    }
+    const verification = verifyAccessToken(token);
+    if (!verification.valid || !verification.decoded) {
+      return res.status(401).json({ success: false, message: 'اعتبار جلسه کاربری منقضی شده است.' });
+    }
+    const user = verification.decoded as any;
+    const { serverQueryCollection } = await import('../lib/serverDataApi');
+    const allAnnouncements = await serverQueryCollection('announcements', user);
+    const activeAnnouncements = (allAnnouncements || [])
+      .filter((a: any) => a && a.isActive !== false && doesAnnouncementMatchUserAudience(a, user))
+      .sort((a: any, b: any) => {
+        const prioWeight = (p: string) => (p === 'urgent' ? 3 : p === 'important' ? 2 : 1);
+        const diff = prioWeight(b.priority) - prioWeight(a.priority);
+        if (diff !== 0) return diff;
+        return new Date(b.createdAt || b.updated_at || 0).getTime() - new Date(a.createdAt || a.updated_at || 0).getTime();
+      });
+
+    const userDismissals = await serverQueryCollection('announcement_dismissals', user);
+    const candidates = [user.id, user.studentId, user.linkedStudentId, user.username]
+      .filter(Boolean)
+      .map((x: any) => String(x).trim().toLowerCase());
+
+    const dismissedIds = Array.from(
+      new Set(
+        (userDismissals || [])
+          .filter((d: any) => {
+            if (!d || !d.announcementId) return false;
+            const dU = String(d.userId || '').trim().toLowerCase();
+            const dS = String(d.studentId || '').trim().toLowerCase();
+            const dName = String(d.username || '').trim().toLowerCase();
+            return (dU && candidates.includes(dU)) || (dS && candidates.includes(dS)) || (dName && candidates.includes(dName));
+          })
+          .map((d: any) => String(d.announcementId))
+      )
+    );
+
+    return res.json({
+      success: true,
+      announcements: activeAnnouncements,
+      dismissedIds
+    });
+  } catch (err: any) {
+    console.error('[STORAGE_FAILURE][announcements/active]', err?.message || err);
+    return res.status(500).json({ success: false, message: err?.message || 'خطا در واکشی اطلاعیه‌های فعال' });
+  }
+});
+
+/**
+ * POST /api/system/announcements/:id/dismiss
+ * Persists a permanent per-user/per-student dismissal ("دیگر به من نمایش نده") in database.
+ */
+router.post('/announcements/:id/dismiss', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  try {
+    const token = extractToken(req);
+    if (!token) {
+      return res.status(401).json({ success: false, message: 'احراز هویت الزامی است.' });
+    }
+    const verification = verifyAccessToken(token);
+    if (!verification.valid || !verification.decoded) {
+      return res.status(401).json({ success: false, message: 'اعتبار جلسه کاربری منقضی شده است.' });
+    }
+    const user = verification.decoded as any;
+    const announcementId = String(req.params.id || '').trim();
+    if (!announcementId) {
+      return res.status(400).json({ success: false, message: 'شناسه اطلاعیه نامعتبر است.' });
+    }
+
+    const userKeyRaw = user.studentId || user.linkedStudentId || user.id || user.username || 'unknown';
+    const userKeyClean = String(userKeyRaw).trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+    const dismissalId = `${announcementId}__${userKeyClean}`;
+    const nowIso = new Date().toISOString();
+
+    const { serverQueryCollection, serverSaveDoc } = await import('../lib/serverDataApi');
+    const existingList = await serverQueryCollection('announcement_dismissals', user);
+    const existingDoc = (existingList || []).find((d: any) => d.id === dismissalId);
+    const nextVersion = (Number(existingDoc?.version) || 0) + 1;
+
+    const payload = {
+      id: dismissalId,
+      announcementId,
+      userId: String(user.id || user.username || ''),
+      studentId: String(user.studentId || user.linkedStudentId || ''),
+      username: String(user.username || ''),
+      dismissedAt: nowIso,
+      updated_at: nowIso,
+      version: nextVersion
+    };
+
+    const saveRes = await serverSaveDoc('announcement_dismissals', payload, user);
+    if (!saveRes.success) {
+      return res.status(500).json({ success: false, message: saveRes.error || 'خطا در ثبت دائمی عدم نمایش اطلاعیه' });
+    }
+
+    const updatedDismissals = await serverQueryCollection('announcement_dismissals', user);
+    const candidates = [user.id, user.studentId, user.linkedStudentId, user.username]
+      .filter(Boolean)
+      .map((x: any) => String(x).trim().toLowerCase());
+    const dismissedIds = Array.from(
+      new Set(
+        (updatedDismissals || [])
+          .filter((d: any) => {
+            if (!d || !d.announcementId) return false;
+            const dU = String(d.userId || '').trim().toLowerCase();
+            const dS = String(d.studentId || '').trim().toLowerCase();
+            const dName = String(d.username || '').trim().toLowerCase();
+            return (dU && candidates.includes(dU)) || (dS && candidates.includes(dS)) || (dName && candidates.includes(dName));
+          })
+          .map((d: any) => String(d.announcementId))
+      )
+    );
+
+    console.log('[STORAGE_SUCCESS][announcement_dismissals]', dismissalId, `v${nextVersion}`);
+    return res.json({
+      success: true,
+      dismissal: payload,
+      dismissedIds
+    });
+  } catch (err: any) {
+    console.error('[STORAGE_FAILURE][announcements/dismiss]', err?.message || err);
+    return res.status(500).json({ success: false, message: err?.message || 'خطا در ثبت عدم نمایش اطلاعیه' });
+  }
+});
+
 export default router;
+

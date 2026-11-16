@@ -167,12 +167,20 @@ export default function LogViewer() {
   // Fetch Maintenance Mode state
   const fetchMaintenanceState = async () => {
     try {
-      const res = await fetch('/api/monitor/maintenance');
+      const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch('/api/monitor/maintenance', {
+        headers,
+        credentials: 'include'
+      });
       const data = await res.json();
-      if (data && data.success && data.state) {
+      if (res.ok && data && data.success && data.state) {
         setMaintenanceState(data.state);
       }
-    } catch (e) {}
+    } catch (err: any) {
+      console.error('[STORAGE_FAILURE][fetchMaintenanceState]', err?.message || err);
+    }
   };
 
   useEffect(() => {
@@ -182,26 +190,26 @@ export default function LogViewer() {
   // Toggle Maintenance Mode
   const handleToggleMaintenance = async () => {
     const nextEnabled = !maintenanceState.enabled;
-    const confirmMsg = nextEnabled
-      ? 'آیا از فعال‌سازی «حالت تعمیر و بروزرسانی» سامانه اطمینان دارید؟\nدر این حالت کاربران عادی پیام محترمانه بروزرسانی را مشاهده می‌کنند و فقط مدیران ارشد، آموزش و مالی به سامانه دسترسی خواهند داشت.'
-      : 'آیا مایلید حالت تعمیر غیرفعال شده و سامانه برای کلیه کاربران بازگشایی شود؟';
-
-    if (!window.confirm(confirmMsg)) return;
-
     setIsTogglingMaintenance(true);
     try {
+      const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       const res = await fetch('/api/monitor/maintenance', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
+        credentials: 'include',
         body: JSON.stringify({
           enabled: nextEnabled,
-          message: 'سامانه در حال بروزرسانی و پشتیبان‌گیری دوره‌ای می‌باشد. لطفاً دقایقی دیگر مراجعه فرمایید.',
+          message: 'سامانه در حال بروزرسانی و نگهداری فنی می‌باشد. لطفاً دقایقی دیگر مراجعه فرمایید.',
           estimatedDuration: '۱۵ دقیقه'
         })
       });
       const data = await res.json();
-      if (data && data.success) {
+      if (res.ok && data && data.success) {
         setMaintenanceState(data.state);
+        window.dispatchEvent(new CustomEvent('app_maintenance_updated', { detail: data.state }));
         setNotice({
           type: 'success',
           text: data.message || (nextEnabled ? 'حالت تعمیر فعال شد.' : 'حالت تعمیر غیرفعال شد.')
@@ -210,6 +218,7 @@ export default function LogViewer() {
         setNotice({ type: 'error', text: data.message || 'خطا در تغییر وضعیت حالت تعمیر' });
       }
     } catch (err: any) {
+      console.error('[STORAGE_FAILURE][toggleMaintenance]', err?.message || err);
       setNotice({ type: 'error', text: 'خطا در ارتباط با سرور: ' + err?.message });
     } finally {
       setIsTogglingMaintenance(false);

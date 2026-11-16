@@ -9,7 +9,7 @@ import {
   CalendarRange,
   RotateCcw,
 } from 'lucide-react';
-import { cn } from '../../../lib/utils';
+import { cn, getProgramRoomsSummary } from '../../../lib/utils';
 import { localDb } from '../../../lib/localDb';
 import { useAuth } from '../../../context/AuthContext';
 import { Program, AttendanceSessionLog, Student } from '../../../types';
@@ -271,7 +271,7 @@ export const StudentMobileAttendance: React.FC<StudentMobileAttendanceProps> = (
         id: p.id,
         title: p.title,
         teacher: p.teacher || 'استاد تعیین‌نشده',
-        madrasRoom: p.madrasRoom,
+        madrasRoom: getProgramRoomsSummary(p),
         total: courseEvents.length,
         absent: abs,
         excused: exc,

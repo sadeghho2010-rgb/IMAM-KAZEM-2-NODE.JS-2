@@ -1,5 +1,5 @@
 import { Program, MadrasRoom } from '../../types';
-import { getProgramDays } from '../../lib/utils';
+import { getProgramDays, getProgramRoomForDay, getProgramUniqueRooms } from '../../lib/utils';
 
 export interface TimeSlotDef {
   id: string;
@@ -195,16 +195,15 @@ export function isActiveMadrasProgram(prog: Program | null | undefined): boolean
   return true;
 }
 
-export function isProgramInRoom(prog: Program, room: MadrasRoom): boolean {
-  if (!isActiveMadrasProgram(prog)) return false;
-  const pRoom = (prog.madrasRoom || prog.classroom || '').trim();
-  if (!pRoom) return false;
+function doesRoomNameMatch(pRoom: string, room: MadrasRoom): boolean {
+  const trimmed = (pRoom || '').trim();
+  if (!trimmed) return false;
 
   const stripFloor = (s: string) =>
     s.replace(/^(طبقه\s*(همکف|اول|دوم|سوم|چهارم|زیرزمین))\s*-\s*/i, '').trim();
 
-  const cleanPRoom = cleanPersianText(pRoom);
-  const cleanPRoomStripped = cleanPersianText(stripFloor(pRoom));
+  const cleanPRoom = cleanPersianText(trimmed);
+  const cleanPRoomStripped = cleanPersianText(stripFloor(trimmed));
   const cleanRoomName = cleanPersianText(room.name);
   const cleanRoomNameStripped = cleanPersianText(stripFloor(room.name));
   const cleanRoomCode = cleanPersianText(room.code || '');
@@ -219,7 +218,7 @@ export function isProgramInRoom(prog: Program, room: MadrasRoom): boolean {
 
   // Compare without parentheses e.g. "مدرس ۱ (شیخ انصاری)" vs "مدرس ۱"
   const roomNameNoParen = cleanPersianText(room.name.replace(/\(.*?\)/g, ''));
-  const pRoomNoParen = cleanPersianText(pRoom.replace(/\(.*?\)/g, ''));
+  const pRoomNoParen = cleanPersianText(trimmed.replace(/\(.*?\)/g, ''));
   if (roomNameNoParen && (cleanPRoom === roomNameNoParen || pRoomNoParen === roomNameNoParen)) {
     return true;
   }
@@ -234,6 +233,19 @@ export function isProgramInRoom(prog: Program, room: MadrasRoom): boolean {
   }
 
   return false;
+}
+
+export function isProgramInRoomForDay(prog: Program, room: MadrasRoom, day: string): boolean {
+  if (!isActiveMadrasProgram(prog)) return false;
+  const pRoom = getProgramRoomForDay(prog, day);
+  return doesRoomNameMatch(pRoom, room);
+}
+
+export function isProgramInRoom(prog: Program, room: MadrasRoom): boolean {
+  if (!isActiveMadrasProgram(prog)) return false;
+  const uniqueRooms = getProgramUniqueRooms(prog);
+  if (uniqueRooms.length === 0) return false;
+  return uniqueRooms.some(rName => doesRoomNameMatch(rName, room));
 }
 
 export function isDayMatch(program: Program, day: string): boolean {
@@ -304,8 +316,8 @@ export function getRoomCurrentStatus(
 
   const match = programs.find(prog => {
     if (!isActiveMadrasProgram(prog)) return false;
-    if (!isProgramInRoom(prog, room)) return false;
     if (!isDayMatch(prog, currentDay)) return false;
+    if (!isProgramInRoomForDay(prog, room, currentDay)) return false;
     return isProgramInTimeRange(prog, currentMinutes, currentMinutes + 1);
   });
 

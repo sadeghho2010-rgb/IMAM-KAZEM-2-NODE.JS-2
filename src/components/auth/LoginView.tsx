@@ -17,7 +17,8 @@ import {
   Users,
   ChevronDown,
   X,
-  Check
+  Check,
+  Wrench
 } from 'lucide-react';
 import { AppUser } from '../../types/auth';
 import { Teacher } from '../../types';
@@ -52,6 +53,22 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
   const [showQuickPresets, setShowQuickPresets] = useState(false);
   const [selectedLevelTab, setSelectedLevelTab] = useState<1 | 2 | 3>(1);
   const [bankTeachers, setBankTeachers] = useState<Teacher[]>([]);
+  const [maintenanceBanner, setMaintenanceBanner] = useState<{ enabled: boolean; message?: string; estimatedDuration?: string | null } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/system/maintenance-status', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(d => {
+        if (active && d && d.enabled) {
+          setMaintenanceBanner({ enabled: true, message: d.message, estimatedDuration: d.estimatedDuration });
+        }
+      })
+      .catch((err) => {
+        console.error('[STORAGE_FAILURE][login_maintenance_probe]', err);
+      });
+    return () => { active = false; };
+  }, []);
 
   // Load teachers from database only when quick presets drawer is active and opened
   useEffect(() => {
@@ -327,6 +344,21 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
         <div className="mb-4">
           <PWAInstallButton variant="sidebar" />
         </div>
+
+        {/* Maintenance Mode Active Banner */}
+        {maintenanceBanner?.enabled && (
+          <div className="mb-4 p-3.5 rounded-xl bg-amber-500/20 border border-amber-400/50 backdrop-blur-md text-amber-100 text-xs flex items-start gap-2.5 shadow-lg">
+            <Wrench size={18} className="text-amber-300 shrink-0 mt-0.5" />
+            <div className="space-y-1 flex-1 leading-relaxed">
+              <div className="font-black text-amber-200">سامانه در حال تعمیر و نگهداری فنی است</div>
+              <p className="text-amber-100/90 text-[11px]">{maintenanceBanner.message}</p>
+              <p className="text-[10.5px] text-amber-200/80">
+                در این وضعیت فقط مسئول آموزش و مدیر ارشد امکان استفاده از سامانه را دارند.
+                {maintenanceBanner.estimatedDuration ? ` (زمان تقریبی: ${maintenanceBanner.estimatedDuration})` : ''}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Success Toast */}
         <AnimatePresence>

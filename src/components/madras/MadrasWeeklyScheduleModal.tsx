@@ -21,7 +21,8 @@ import {
   MADRAS_HOURLY_SLOTS_7_TO_17, 
   WEEK_DAYS_SEMINARY, 
   isActiveMadrasProgram,
-  isProgramInRoom, 
+  isProgramInRoom,
+  isProgramInRoomForDay,
   isDayMatch, 
   isProgramInTimeRange, 
   timeToMinutes 
@@ -74,7 +75,7 @@ export default function MadrasWeeklyScheduleModal({
 
   if (!room) return null;
 
-  // Find program for a specific day and time range
+  // Find program for a specific day and time range (respecting per-day rooms)
   const getProgramForCell = (day: string, startTime: string, endTime: string): Program | undefined => {
     const startM = timeToMinutes(startTime);
     const endM = timeToMinutes(endTime);
@@ -82,6 +83,7 @@ export default function MadrasWeeklyScheduleModal({
 
     return roomPrograms.find(p => {
       if (!isDayMatch(p, day)) return false;
+      if (!isProgramInRoomForDay(p, room, day)) return false;
       return isProgramInTimeRange(p, startM, endM);
     });
   };

@@ -660,7 +660,7 @@ export interface StudentBackupPackage {
 }
 
 const DB_NAME = 'TOLAB_OFFLINE_LOCAL_DB';
-const DB_VERSION = 11;
+const DB_VERSION = 12;
 
 export const COLLECTIONS = [
   'students',
@@ -756,7 +756,10 @@ export const COLLECTIONS = [
   'curriculum_chapters',
   'student_course_progress',
   'student_portal_access_config',
-  'app_logs'
+  'app_logs',
+  'announcements',
+  'announcement_dismissals',
+  'system_settings'
 ] as const;
 
 export type CollectionName = typeof COLLECTIONS[number] | string;

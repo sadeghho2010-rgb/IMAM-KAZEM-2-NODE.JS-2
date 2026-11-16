@@ -55,7 +55,9 @@ import {
   Wallet,
   Send,
   Zap,
-  X
+  X,
+  Megaphone,
+  Wrench
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -706,6 +708,17 @@ export default function MainDashboard({
       accentText: 'text-emerald-600'
     },
     {
+      id: 'announcements-management',
+      title: 'مدیریت اطلاعیه‌ها',
+      subtitle: 'ثبت و فعال‌سازی اطلاعیه‌های پاپ‌آپ و زنگوله برای طلاب، اساتید و کادر با ثبت ماندگار در دیتابیس',
+      category: 'education',
+      icon: Megaphone,
+      iconBg: 'bg-gradient-to-br from-indigo-600 via-blue-600 to-cyan-600 text-white shadow-lg shadow-indigo-500/30',
+      cardGradient: 'from-indigo-500/10 via-blue-500/5 to-transparent',
+      borderGlow: 'hover:border-indigo-400 hover:shadow-2xl hover:shadow-indigo-500/20',
+      accentText: 'text-indigo-600'
+    },
+    {
       id: 'student-access-management',
       title: 'مدیریت دسترسی بخش‌های طلاب',
       subtitle: 'فعال یا غیرفعال‌سازی بخش‌های پنل طلاب (رزرو غذا، مطالعه، تقاضا و...) به صورت سراسری یا اختصاصی هر طلبه',
@@ -1155,6 +1168,17 @@ export default function MainDashboard({
       cardGradient: 'from-indigo-600/10 via-blue-500/5 to-transparent',
       borderGlow: 'hover:border-indigo-500 hover:shadow-2xl hover:shadow-indigo-600/20',
       accentText: 'text-indigo-600'
+    },
+    {
+      id: 'maintenance-mode',
+      title: 'حالت تعمیر و نگهداری سایت',
+      subtitle: 'بستن موقت سامانه برای تمام کاربران غیرمجاز و ابقای دسترسی اختصاصی سوپر ادمین و مسئول آموزش',
+      category: 'system',
+      icon: Wrench,
+      iconBg: 'bg-gradient-to-br from-amber-500 via-orange-600 to-rose-600 text-white shadow-lg shadow-amber-500/30',
+      cardGradient: 'from-amber-500/10 via-orange-500/5 to-transparent',
+      borderGlow: 'hover:border-amber-400 hover:shadow-2xl hover:shadow-amber-500/20',
+      accentText: 'text-amber-700'
     }
   ];
 
@@ -1182,7 +1206,7 @@ export default function MainDashboard({
       cardGradient: 'from-indigo-600/15 via-violet-500/5 to-transparent',
       borderGlow: 'hover:border-indigo-500 hover:shadow-2xl hover:shadow-indigo-600/25',
       accentText: 'text-indigo-600',
-      itemIds: ['programs', 'classrooms', 'teachers-schedule', 'course-selection', 'passed-courses', 'oral-exams', 'academic-calendar', 'held-sessions', 'teachers-bank']
+      itemIds: ['programs', 'classrooms', 'teachers-schedule', 'course-selection', 'passed-courses', 'oral-exams', 'academic-calendar', 'held-sessions', 'teachers-bank', 'announcements-management']
     },
     {
       id: 'students_group',
@@ -1243,7 +1267,7 @@ export default function MainDashboard({
         ? `🚨 مصرف بالای CPU/RAM` 
         : (unresolvedAnomaliesCount > 0 ? `${unresolvedAnomaliesCount} هشدار` : undefined),
       highlight: systemHealthAlert?.isHigh || unresolvedAnomaliesCount > 0,
-      itemIds: ['user-management', 'user-credentials', 'student-access-management', 'backup', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection', 'system-health', 'db-connection-test', 'system-audit-logs']
+      itemIds: ['user-management', 'user-credentials', 'student-access-management', 'maintenance-mode', 'backup', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection', 'system-health', 'db-connection-test', 'system-audit-logs']
     }
   ];
 

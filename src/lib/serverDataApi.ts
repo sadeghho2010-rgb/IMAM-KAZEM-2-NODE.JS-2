@@ -232,6 +232,48 @@ export function authorizeCollectionAccess(
     return { allowed: false, reason: 'احراز هویت الزامی است. مشاهده یا ویرایش این داده‌ها نیازمند ورود به سامانه است.' };
   }
 
+  // Announcements: all authenticated users can read; strictly non-read-only Super Admin & Education Officer can write/delete
+  if (collection === 'announcements') {
+    if (action === 'read') return { allowed: true };
+    if (user.isReadOnly === true || user.canEdit === false) {
+      return { allowed: false, reason: 'کاربران دارای دسترسی فقط‌مشاهده مجاز به ایجاد یا تغییر اطلاعیه نیستند.' };
+    }
+    const uName = String(user.username || '').toUpperCase();
+    const canManageAnnouncements =
+      user.role === 'super_admin' ||
+      (user.level === 1 && user.role !== 'school_manager') ||
+      user.role === 'education_manager' ||
+      user.role === 'education_officer' ||
+      uName === 'SADEGH' ||
+      uName === 'SHAH' ||
+      uName === 'SHAHPOORI';
+    if (canManageAnnouncements) return { allowed: true };
+    return { allowed: false, reason: 'مدیریت اطلاعیه‌ها منحصراً در اختیار مسئول آموزش و سوپر ادمین است.' };
+  }
+
+  // Announcement Dismissals: authenticated users can read/write only their own dismissal records
+  if (collection === 'announcement_dismissals') {
+    if (action === 'read') return { allowed: true };
+    if (action === 'write') {
+      const candidateOwnerIds = [user.id, user.studentId, user.linkedStudentId, user.username]
+        .filter(Boolean)
+        .map((x: any) => String(x).trim().toLowerCase());
+      if (!recordOwnerId || candidateOwnerIds.includes(String(recordOwnerId).trim().toLowerCase())) {
+        return { allowed: true };
+      }
+      const uName = String(user.username || '').toUpperCase();
+      if (user.role === 'super_admin' || user.role === 'education_manager' || uName === 'SADEGH' || uName === 'SHAH') {
+        return { allowed: true };
+      }
+      return { allowed: false, reason: 'شما فقط مجاز به ثبت وضعیت نمایش اطلاعیه‌های خود هستید.' };
+    }
+    const uName = String(user.username || '').toUpperCase();
+    if (user.role === 'super_admin' || user.role === 'education_manager' || uName === 'SADEGH' || uName === 'SHAH') {
+      return { allowed: true };
+    }
+    return { allowed: false, reason: 'حذف سابقه تایید اطلاعیه مجاز نیست.' };
+  }
+
   // Level 1: Super Admin has full unrestricted access
   if (user.level === 1 || user.role === 'super_admin' || user.role === 'school_manager') {
     return { allowed: true };
@@ -1187,6 +1229,28 @@ export function canUserReadDoc(user: any, collection: string, doc: any, context?
     }
   }
 
+  // 8. Announcement Dismissals: users only see their own dismissal records unless admin/education officer
+  if (collection === 'announcement_dismissals') {
+    const uName = String(user.username || '').toUpperCase();
+    const isAdminOrEdu =
+      user.level === 1 ||
+      user.role === 'super_admin' ||
+      user.role === 'education_manager' ||
+      user.role === 'education_officer' ||
+      uName === 'SADEGH' ||
+      uName === 'SHAH';
+    if (isAdminOrEdu) return true;
+    const candidates = [user.id, user.studentId, user.linkedStudentId, user.username]
+      .filter(Boolean)
+      .map((x: any) => String(x).trim().toLowerCase());
+    const docUser = String(doc.userId || '').trim().toLowerCase();
+    const docStudent = String(doc.studentId || '').trim().toLowerCase();
+    const docUname = String(doc.username || '').trim().toLowerCase();
+    return (docUser && candidates.includes(docUser)) ||
+           (docStudent && candidates.includes(docStudent)) ||
+           (docUname && candidates.includes(docUname));
+  }
+
   return true;
 }
 
@@ -1493,7 +1557,7 @@ export async function fetchBootstrapData(callerUserOrLevel: any, userRole?: stri
     'periodic_study_logs', 'study_daily_entries', 'discussion_groups', 'academic_sub_periods',
     'counseling_session_grades',
     'curriculum_subjects', 'curriculum_books', 'curriculum_chapters', 'student_course_progress',
-    'student_portal_access_config'
+    'student_portal_access_config', 'announcements', 'announcement_dismissals'
   ];
 
   const BATCH_SIZE = 6;

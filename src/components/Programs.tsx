@@ -45,7 +45,7 @@ import { StudentCourseProgressService } from '../services/StudentCourseProgressS
 import { dispatchDatabaseToast } from '../lib/databaseToast';
 import { useMentor, getStudentMentorKey } from '../context/MentorContext';
 import { useAuth } from '../context/AuthContext';
-import { cn, WEEK_DAYS, getProgramDays } from '../lib/utils';
+import { cn, WEEK_DAYS, getProgramDays, getProgramRoomForDay, getProgramRoomsSummary } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { exportElementToPdf } from '../lib/pdfExport';
 import { exportElementToImage } from '../lib/imageExport';
@@ -389,8 +389,6 @@ export function getConflictingClassrooms(
   for (const prog of allPrograms) {
     if (!prog || prog.isDeleted === true || prog.status === 'deleted' || prog.status === 'inactive' || Boolean((prog as any).deletedAt)) continue;
     if (excludeProgramId && prog.id === excludeProgramId) continue;
-    const roomName = (prog.madrasRoom || prog.classroom || '').trim();
-    if (!roomName || roomName === '__OTHER__') continue;
 
     const progDays = getProgramDays(prog);
     const sharedDays = targetDays.filter(d => progDays.includes(d));
@@ -400,19 +398,43 @@ export function getConflictingClassrooms(
     if (!progRange) continue;
 
     if (isTimeSlotOverlapping(targetRange.startTime, targetRange.endTime, progRange.startTime, progRange.endTime)) {
-      const existingList = conflictMap.get(roomName) || [];
-      existingList.push({
-        roomName,
-        programTitle: prog.title,
-        grade: prog.grade,
-        day: sharedDays.join(' و '),
-        time: prog.time || `${progRange.startTime} - ${progRange.endTime}`
-      });
-      conflictMap.set(roomName, existingList);
+      const daysByRoom = new Map<string, string[]>();
+      for (const d of sharedDays) {
+        const roomOnDay = getProgramRoomForDay(prog, d);
+        if (!roomOnDay || roomOnDay === '__OTHER__') continue;
+        const arr = daysByRoom.get(roomOnDay) || [];
+        arr.push(d);
+        daysByRoom.set(roomOnDay, arr);
+      }
+
+      for (const [roomName, daysArr] of daysByRoom.entries()) {
+        const existingList = conflictMap.get(roomName) || [];
+        existingList.push({
+          roomName,
+          programTitle: prog.title,
+          grade: prog.grade,
+          day: daysArr.join(' و '),
+          time: prog.time || `${progRange.startTime} - ${progRange.endTime}`
+        });
+        conflictMap.set(roomName, existingList);
+      }
     }
   }
 
   return conflictMap;
+}
+
+export function getConflictingClassroomsByDay(
+  allPrograms: Program[],
+  targetDays: string[],
+  targetTime: string,
+  excludeProgramId?: string
+): Record<string, Map<string, ClassroomConflictInfo[]>> {
+  const result: Record<string, Map<string, ClassroomConflictInfo[]>> = {};
+  for (const day of targetDays) {
+    result[day] = getConflictingClassrooms(allPrograms, [day], targetTime, excludeProgramId);
+  }
+  return result;
 }
 
 function normalizeRoomKey(val?: string): string {
@@ -497,7 +519,7 @@ export function isProgramMatchingSearch(p: Program, search: string): boolean {
 
   const titleMatch = p.title?.toLowerCase().includes(term);
   const teacherMatch = p.teacher?.toLowerCase().includes(term);
-  const roomMatch = (p.madrasRoom || p.classroom || '').toLowerCase().includes(term);
+  const roomMatch = (getProgramRoomsSummary(p) || p.madrasRoom || p.classroom || '').toLowerCase().includes(term);
   const dayMatch = p.day?.toLowerCase().includes(term);
   const timeMatch = p.time?.toLowerCase().includes(term);
   const gradeMatch = p.grade?.toLowerCase().includes(term);
@@ -753,6 +775,14 @@ export default function Programs() {
   const [isCustomRoomAdd, setIsCustomRoomAdd] = useState(false);
   const [isCustomRoomEdit, setIsCustomRoomEdit] = useState(false);
 
+  // Per-day Madras room mode toggles & maps (اصلاح ۴۵)
+  const [isPerDayRoomAdd, setIsPerDayRoomAdd] = useState(false);
+  const [addDailyRooms, setAddDailyRooms] = useState<Record<string, string>>({});
+  const [isCustomRoomAddByDay, setIsCustomRoomAddByDay] = useState<Record<string, boolean>>({});
+  const [isPerDayRoomEdit, setIsPerDayRoomEdit] = useState(false);
+  const [editDailyRooms, setEditDailyRooms] = useState<Record<string, string>>({});
+  const [isCustomRoomEditByDay, setIsCustomRoomEditByDay] = useState<Record<string, boolean>>({});
+
   // Teachers state & toggles
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [isCustomTeacherAdd, setIsCustomTeacherAdd] = useState(false);
@@ -780,12 +810,20 @@ export default function Programs() {
     return getConflictingClassrooms(programs, addModalDays, newProgram.time || '');
   }, [programs, addModalDays, newProgram.time]);
 
+  const busyRoomsByDayAdd = useMemo(() => {
+    return getConflictingClassroomsByDay(programs, addModalDays, newProgram.time || '');
+  }, [programs, addModalDays, newProgram.time]);
+
   const availableRoomsAdd = useMemo(() => {
     return rooms.filter(r => !isClassroomConflicting(r, busyRoomsMapAdd));
   }, [rooms, busyRoomsMapAdd]);
 
   const busyRoomsMapEdit = useMemo(() => {
     return getConflictingClassrooms(programs, editModalDays, editingProgram?.time || '', editingProgram?.id);
+  }, [programs, editModalDays, editingProgram?.time, editingProgram?.id]);
+
+  const busyRoomsByDayEdit = useMemo(() => {
+    return getConflictingClassroomsByDay(programs, editModalDays, editingProgram?.time || '', editingProgram?.id);
   }, [programs, editModalDays, editingProgram?.time, editingProgram?.id]);
 
   const availableRoomsEdit = useMemo(() => {
@@ -976,7 +1014,7 @@ export default function Programs() {
             </tr>
             <tr>
               <td>پایه تحصیلی: <strong>${st.grade || targetEvalProgram.grade || '-'}</strong> &nbsp;|&nbsp; کد: ${st.studentCode || st.nationalId || '-'}</td>
-              <td>زمان و مکان: ${targetEvalProgram.time || '-'} - مَدرَس ${targetEvalProgram.madrasRoom || '-'}</td>
+              <td>زمان و مکان: ${targetEvalProgram.time || '-'} - مَدرَس ${getProgramRoomsSummary(targetEvalProgram) || '-'}</td>
             </tr>
           </table>
 
@@ -1595,13 +1633,31 @@ export default function Programs() {
       }
     }
 
-    // Check classroom / room conflict
-    const targetRoom = (newProgram.madrasRoom || '').trim();
-    if (targetRoom && targetRoom !== '__OTHER__') {
-      const roomConflict = getClassroomConflictDetails(targetRoom, busyRoomsMapAdd);
-      if (roomConflict) {
-        dispatchDatabaseToast(`مَدرَس «${targetRoom}» در روز ${roomConflict.day} ساعت ${roomConflict.time} برای کلاس «${roomConflict.programTitle}» رزرو شده و تداخل دارد.`, 'error', 6000);
-        return;
+    // Check classroom / room conflict (uniform or per-day)
+    const cleanedDailyRoomsAdd: Record<string, string> = {};
+    if (isPerDayRoomAdd) {
+      for (const day of addModalDays) {
+        const dayRoom = (addDailyRooms[day] || '').trim();
+        if (dayRoom && dayRoom !== '__OTHER__') {
+          cleanedDailyRoomsAdd[day] = dayRoom;
+          const dayMap = busyRoomsByDayAdd[day];
+          if (dayMap) {
+            const conflict = getClassroomConflictDetails(dayRoom, dayMap);
+            if (conflict) {
+              dispatchDatabaseToast(`مَدرَس «${dayRoom}» در روز ${day} ساعت ${conflict.time} برای کلاس «${conflict.programTitle}» رزرو شده و تداخل دارد.`, 'error', 6000);
+              return;
+            }
+          }
+        }
+      }
+    } else {
+      const targetRoom = (newProgram.madrasRoom || '').trim();
+      if (targetRoom && targetRoom !== '__OTHER__') {
+        const roomConflict = getClassroomConflictDetails(targetRoom, busyRoomsMapAdd);
+        if (roomConflict) {
+          dispatchDatabaseToast(`مَدرَس «${targetRoom}» در روز ${roomConflict.day} ساعت ${roomConflict.time} برای کلاس «${roomConflict.programTitle}» رزرو شده و تداخل دارد.`, 'error', 6000);
+          return;
+        }
       }
     }
 
@@ -1611,7 +1667,11 @@ export default function Programs() {
       const dayStr = addModalDays.join(' ، ');
       const programGrade = newProgram.grade || 'پایه 7';
       const cleanTeacher = (newProgram.teacher || '').trim();
-      const cleanRoom = (newProgram.madrasRoom || '').trim();
+      const uniqueAddDayRooms = Array.from(new Set(Object.values(cleanedDailyRoomsAdd)));
+      const cleanRoom = isPerDayRoomAdd
+        ? (uniqueAddDayRooms[0] || (newProgram.madrasRoom || '').trim())
+        : (newProgram.madrasRoom || '').trim();
+      const hasDistinctPerDayAdd = isPerDayRoomAdd && Object.keys(cleanedDailyRoomsAdd).length > 0 && uniqueAddDayRooms.length > 1;
 
       const tempId = `prog_${Date.now()}`;
       const nowIso = new Date().toISOString();
@@ -1630,6 +1690,7 @@ export default function Programs() {
         teacher: cleanTeacher,
         madrasRoom: cleanRoom,
         classroom: cleanRoom,
+        dailyMadrasRooms: hasDistinctPerDayAdd ? cleanedDailyRoomsAdd : undefined,
         parentProgramId: newProgram.type === 'مشاوره' ? (newProgram.parentProgramId || '') : '',
         representativeStudentIds: newProgram.representativeStudentIds || [],
         representativeNames: newProgram.representativeNames || [],
@@ -1688,6 +1749,9 @@ export default function Programs() {
       setCustomEndAdd('09:00');
       setIsCustomTeacherAdd(false);
       setIsCustomRoomAdd(false);
+      setIsPerDayRoomAdd(false);
+      setAddDailyRooms({});
+      setIsCustomRoomAddByDay({});
 
       if (selectedGradeFilter !== 'all' && selectedGradeFilter !== programGrade) {
         setSelectedGradeFilter(programGrade);
@@ -1746,7 +1810,26 @@ export default function Programs() {
     setEditStudentIdsModified(false);
     setShowEditStudentsSection(false);
     setEditingProgram(program);
-    setEditModalDays(getProgramDays(program));
+    const resolvedDays = getProgramDays(program);
+    setEditModalDays(resolvedDays);
+
+    const hasDailyMap = Boolean(
+      program.dailyMadrasRooms &&
+      typeof program.dailyMadrasRooms === 'object' &&
+      Object.keys(program.dailyMadrasRooms).length > 0
+    );
+    setIsPerDayRoomEdit(hasDailyMap);
+    if (hasDailyMap && program.dailyMadrasRooms) {
+      const prefilled: Record<string, string> = {};
+      resolvedDays.forEach((d) => {
+        prefilled[d] = getProgramRoomForDay(program, d);
+      });
+      setEditDailyRooms(prefilled);
+    } else {
+      setEditDailyRooms({});
+    }
+    setIsCustomRoomEditByDay({});
+
     if (program.time) {
       const parsed = extractProgramTimeRange({ time: program.time });
       if (parsed) {
@@ -1770,13 +1853,31 @@ export default function Programs() {
       }
     }
 
-    // Check classroom / room conflict
-    const targetRoom = (editingProgram.madrasRoom || editingProgram.classroom || '').trim();
-    if (targetRoom && targetRoom !== '__OTHER__') {
-      const roomConflict = getClassroomConflictDetails(targetRoom, busyRoomsMapEdit);
-      if (roomConflict) {
-        dispatchDatabaseToast(`مَدرَس «${targetRoom}» در روز ${roomConflict.day} ساعت ${roomConflict.time} برای کلاس «${roomConflict.programTitle}» رزرو شده و تداخل دارد.`, 'error', 6000);
-        return;
+    // Check classroom / room conflict (uniform or per-day)
+    const cleanedDailyRoomsEdit: Record<string, string> = {};
+    if (isPerDayRoomEdit) {
+      for (const day of editModalDays) {
+        const dayRoom = (editDailyRooms[day] || '').trim();
+        if (dayRoom && dayRoom !== '__OTHER__') {
+          cleanedDailyRoomsEdit[day] = dayRoom;
+          const dayMap = busyRoomsByDayEdit[day];
+          if (dayMap) {
+            const conflict = getClassroomConflictDetails(dayRoom, dayMap);
+            if (conflict) {
+              dispatchDatabaseToast(`مَدرَس «${dayRoom}» در روز ${day} ساعت ${conflict.time} برای کلاس «${conflict.programTitle}» رزرو شده و تداخل دارد.`, 'error', 6000);
+              return;
+            }
+          }
+        }
+      }
+    } else {
+      const targetRoom = (editingProgram.madrasRoom || editingProgram.classroom || '').trim();
+      if (targetRoom && targetRoom !== '__OTHER__') {
+        const roomConflict = getClassroomConflictDetails(targetRoom, busyRoomsMapEdit);
+        if (roomConflict) {
+          dispatchDatabaseToast(`مَدرَس «${targetRoom}» در روز ${roomConflict.day} ساعت ${roomConflict.time} برای کلاس «${roomConflict.programTitle}» رزرو شده و تداخل دارد.`, 'error', 6000);
+          return;
+        }
       }
     }
 
@@ -1786,6 +1887,12 @@ export default function Programs() {
       const dayStr = editModalDays.join(' ، ');
       const nowIso = new Date().toISOString();
       const uniqueEditedStudentIds = Array.from(new Set(editSelectedStudentIds));
+
+      const uniqueEditDayRooms = Array.from(new Set(Object.values(cleanedDailyRoomsEdit)));
+      const targetRoom = isPerDayRoomEdit
+        ? (uniqueEditDayRooms[0] || (editingProgram.madrasRoom || editingProgram.classroom || '').trim())
+        : (editingProgram.madrasRoom || editingProgram.classroom || '').trim();
+      const hasDistinctPerDayEdit = isPerDayRoomEdit && Object.keys(cleanedDailyRoomsEdit).length > 0 && uniqueEditDayRooms.length > 1;
 
       const editTimeStr = editingProgram.time || '۰۸:۰۰ الی ۰۹:۰۰';
       const parsedEditRange = extractProgramTimeRange({ time: editTimeStr });
@@ -1802,6 +1909,7 @@ export default function Programs() {
         teacher: targetTeacher,
         madrasRoom: targetRoom,
         classroom: targetRoom,
+        dailyMadrasRooms: hasDistinctPerDayEdit ? cleanedDailyRoomsEdit : undefined,
         representativeStudentIds: editingProgram.representativeStudentIds || [],
         representativeNames: editingProgram.representativeNames || [],
         customRepresentative: (editingProgram.representativeNames && editingProgram.representativeNames.length > 0) ? (editingProgram.customRepresentative || '') : '',
@@ -2494,10 +2602,10 @@ export default function Programs() {
               {/* Program Details: Room, Time, Days (Hidden by default), Teacher (Prominent), Students (Prominent) */}
               <div className="flex flex-wrap items-center gap-2.5 text-xs font-medium">
                 {/* Classroom */}
-                {(program.madrasRoom || program.classroom) && (
+                {getProgramRoomsSummary(program) && (
                   <span className="flex items-center gap-1 text-slate-700 font-bold bg-slate-100/90 px-2.5 py-1 rounded-xl border border-slate-200/80 shadow-2xs">
-                    <DoorOpen size={14} className="text-indigo-600" />
-                    <span>مَدرَس: {program.madrasRoom || program.classroom}</span>
+                    <DoorOpen size={14} className="text-indigo-600 shrink-0" />
+                    <span>مَدرَس: {getProgramRoomsSummary(program)}</span>
                   </span>
                 )}
 
@@ -4074,10 +4182,10 @@ export default function Programs() {
                       <Clock size={13} className="text-slate-400 shrink-0" />
                       <span>زمان: <strong className="text-slate-800">{p.day || ''} - {p.time || 'نامشخص'}</strong></span>
                     </div>
-                    {(p.madrasRoom || p.classroom) && (
+                    {getProgramRoomsSummary(p) && (
                       <div className="flex items-center gap-1.5">
                         <DoorOpen size={13} className="text-slate-400 shrink-0" />
-                        <span>مَدرَس: <strong className="text-slate-800">{p.madrasRoom || p.classroom}</strong></span>
+                        <span>مَدرَس: <strong className="text-slate-800">{getProgramRoomsSummary(p)}</strong></span>
                       </div>
                     )}
                     <div className="flex items-center gap-1.5">
@@ -4515,21 +4623,141 @@ export default function Programs() {
 
                 {/* Madras Room (شماره مدرَس) */}
                 <div>
-                  <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
                     <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
                       <DoorOpen size={13} className="text-indigo-600" />
                       <span>شماره مَدرَس (کلاس درس)</span>
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => setIsCustomRoomAdd(!isCustomRoomAdd)}
-                      className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline decoration-indigo-300"
-                    >
-                      {isCustomRoomAdd ? 'انتخاب از لیست مَدرَس‌ها' : 'سایر (نوشتن دستی)'}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = !isPerDayRoomAdd;
+                          setIsPerDayRoomAdd(next);
+                          if (next) {
+                            const seedRoom = (newProgram.madrasRoom || '').trim();
+                            setAddDailyRooms((prev) => {
+                              const copy = { ...prev };
+                              addModalDays.forEach((d) => {
+                                if (!copy[d] && seedRoom) copy[d] = seedRoom;
+                              });
+                              return copy;
+                            });
+                          }
+                        }}
+                        className={cn(
+                          "text-[10.5px] font-black px-2 py-0.5 rounded-lg border transition-colors cursor-pointer flex items-center gap-1",
+                          isPerDayRoomAdd
+                            ? "bg-indigo-600 text-white border-indigo-600 shadow-2xs"
+                            : "bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100"
+                        )}
+                        title="اگر این کلاس در روزهای مختلف در مَدرَس‌های متفاوت برگزار می‌شود، این گزینه را بزنید"
+                      >
+                        <Calendar size={11} />
+                        <span>{isPerDayRoomAdd ? 'حالت یکسان برای همه روزها' : 'مَدرَس مجزا برای هر روز'}</span>
+                      </button>
+                      {!isPerDayRoomAdd && (
+                        <button
+                          type="button"
+                          onClick={() => setIsCustomRoomAdd(!isCustomRoomAdd)}
+                          className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline decoration-indigo-300 cursor-pointer"
+                        >
+                          {isCustomRoomAdd ? 'انتخاب از لیست مَدرَس‌ها' : 'سایر (نوشتن دستی)'}
+                        </button>
+                      )}
+                    </div>
                   </div>
 
-                  {!isCustomRoomAdd ? (
+                  {isPerDayRoomAdd ? (
+                    <div className="bg-slate-50/90 border border-indigo-200/80 rounded-xl p-2.5 space-y-2">
+                      <div className="flex items-center justify-between gap-2 text-[10.5px] text-slate-600">
+                        <span className="font-bold">انتخاب مَدرَس برای هر روز هفته:</span>
+                        {addModalDays.length > 1 && (addDailyRooms[addModalDays[0]] || '').trim() && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const firstRoom = (addDailyRooms[addModalDays[0]] || '').trim();
+                              if (!firstRoom) return;
+                              const filled: Record<string, string> = {};
+                              addModalDays.forEach((d) => { filled[d] = firstRoom; });
+                              setAddDailyRooms(filled);
+                            }}
+                            className="text-[10px] font-black text-indigo-700 hover:text-indigo-900 bg-white px-2 py-0.5 rounded-md border border-indigo-200 cursor-pointer"
+                          >
+                            کپی از {addModalDays[0]} برای بقیه
+                          </button>
+                        )}
+                      </div>
+                      {addModalDays.length === 0 ? (
+                        <p className="text-[11px] text-amber-700 font-bold">ابتدا روزهای برگزاری کلاس را انتخاب کنید.</p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {addModalDays.map((day) => {
+                            const dayBusyMap = busyRoomsByDayAdd[day] || new Map<string, ClassroomConflictInfo[]>();
+                            const dayAvailRooms = rooms.filter((r) => !isClassroomConflicting(r, dayBusyMap));
+                            const dayRoomVal = addDailyRooms[day] || '';
+                            const isManualDay = Boolean(isCustomRoomAddByDay[day]);
+
+                            return (
+                              <div key={day} className="flex items-center gap-2">
+                                <span className="w-20 shrink-0 px-2 py-1.5 rounded-lg bg-white border border-slate-200 text-[11px] font-black text-slate-700 text-center">
+                                  {day}
+                                </span>
+                                {!isManualDay ? (
+                                  <select
+                                    className="flex-1 min-w-0 px-3 py-1.5 text-xs border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-bold bg-white text-slate-800"
+                                    value={dayRoomVal}
+                                    onChange={(e) => {
+                                      if (e.target.value === '__OTHER__') {
+                                        setIsCustomRoomAddByDay((prev) => ({ ...prev, [day]: true }));
+                                      } else {
+                                        setAddDailyRooms((prev) => ({ ...prev, [day]: e.target.value }));
+                                      }
+                                    }}
+                                  >
+                                    <option value="">-- انتخاب مَدرَس روز {day} --</option>
+                                    <optgroup label="داخل مجموعه (آزاد در این روز)">
+                                      {dayAvailRooms.filter((r) => !r.isExternal).map((r) => (
+                                        <option key={r.id} value={r.name}>
+                                          {r.name} {r.code ? `(کد ${r.code})` : ''}
+                                        </option>
+                                      ))}
+                                    </optgroup>
+                                    <optgroup label="خارج از مجموعه">
+                                      {dayAvailRooms.filter((r) => r.isExternal).map((r) => (
+                                        <option key={r.id} value={r.name}>
+                                          📍 {r.name}
+                                        </option>
+                                      ))}
+                                      <option value="مدرسه امام باقر علیه السلام">📍 مدرسه امام باقر علیه السلام</option>
+                                      <option value="مدرسه امام حسین علیه السلام">📍 مدرسه امام حسین علیه السلام</option>
+                                      <option value="موسسه ائمه اطهار علیهم السلام">📍 موسسه ائمه اطهار علیهم السلام</option>
+                                    </optgroup>
+                                    <option value="__OTHER__">➕ ورود دستی نام مَدرَس...</option>
+                                  </select>
+                                ) : (
+                                  <input
+                                    type="text"
+                                    placeholder={`نام یا شماره مَدرَس در ${day}...`}
+                                    className="flex-1 min-w-0 px-3 py-1.5 text-xs border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-bold bg-white"
+                                    value={dayRoomVal}
+                                    onChange={(e) => setAddDailyRooms((prev) => ({ ...prev, [day]: e.target.value }))}
+                                  />
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => setIsCustomRoomAddByDay((prev) => ({ ...prev, [day]: !prev[day] }))}
+                                  className="px-2 py-1.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-[10px] font-bold text-slate-600 shrink-0 cursor-pointer"
+                                >
+                                  {isManualDay ? 'لیست' : 'دستی'}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ) : !isCustomRoomAdd ? (
                     <>
                       <select
                         className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold bg-white text-slate-800"
@@ -5217,21 +5445,144 @@ export default function Programs() {
 
                 {/* Madras Room (شماره مدرَس) */}
                 <div>
-                  <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
                     <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
                       <DoorOpen size={13} className="text-indigo-600" />
                       <span>شماره مَدرَس (کلاس درس)</span>
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => setIsCustomRoomEdit(!isCustomRoomEdit)}
-                      className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline decoration-indigo-300"
-                    >
-                      {isCustomRoomEdit ? 'انتخاب از لیست مَدرَس‌ها' : 'سایر (نوشتن دستی)'}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = !isPerDayRoomEdit;
+                          setIsPerDayRoomEdit(next);
+                          if (next && editingProgram) {
+                            const seedRoom = (editingProgram.madrasRoom || editingProgram.classroom || '').trim();
+                            setEditDailyRooms((prev) => {
+                              const copy = { ...prev };
+                              editModalDays.forEach((d) => {
+                                if (!copy[d]) copy[d] = getProgramRoomForDay(editingProgram, d) || seedRoom;
+                              });
+                              return copy;
+                            });
+                          }
+                        }}
+                        className={cn(
+                          "text-[10.5px] font-black px-2 py-0.5 rounded-lg border transition-colors cursor-pointer flex items-center gap-1",
+                          isPerDayRoomEdit
+                            ? "bg-indigo-600 text-white border-indigo-600 shadow-2xs"
+                            : "bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100"
+                        )}
+                        title="اگر این کلاس در روزهای مختلف در مَدرَس‌های متفاوت برگزار می‌شود، این گزینه را بزنید"
+                      >
+                        <Calendar size={11} />
+                        <span>{isPerDayRoomEdit ? 'حالت یکسان برای همه روزها' : 'مَدرَس مجزا برای هر روز'}</span>
+                      </button>
+                      {!isPerDayRoomEdit && (
+                        <button
+                          type="button"
+                          onClick={() => setIsCustomRoomEdit(!isCustomRoomEdit)}
+                          className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline decoration-indigo-300 cursor-pointer"
+                        >
+                          {isCustomRoomEdit ? 'انتخاب از لیست مَدرَس‌ها' : 'سایر (نوشتن دستی)'}
+                        </button>
+                      )}
+                    </div>
                   </div>
 
-                  {!isCustomRoomEdit ? (
+                  {isPerDayRoomEdit ? (
+                    <div className="bg-slate-50/90 border border-indigo-200/80 rounded-xl p-2.5 space-y-2">
+                      <div className="flex items-center justify-between gap-2 text-[10.5px] text-slate-600">
+                        <span className="font-bold">تعیین مَدرَس برای هر روز هفته:</span>
+                        {editModalDays.length > 1 && (editDailyRooms[editModalDays[0]] || '').trim() && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const firstRoom = (editDailyRooms[editModalDays[0]] || '').trim();
+                              if (!firstRoom) return;
+                              const filled: Record<string, string> = {};
+                              editModalDays.forEach((d) => { filled[d] = firstRoom; });
+                              setEditDailyRooms(filled);
+                            }}
+                            className="text-[10px] font-black text-indigo-700 hover:text-indigo-900 bg-white px-2 py-0.5 rounded-md border border-indigo-200 cursor-pointer"
+                          >
+                            کپی از {editModalDays[0]} برای بقیه
+                          </button>
+                        )}
+                      </div>
+                      {editModalDays.length === 0 ? (
+                        <p className="text-[11px] text-amber-700 font-bold">ابتدا روزهای برگزاری کلاس را انتخاب کنید.</p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {editModalDays.map((day) => {
+                            const dayBusyMap = busyRoomsByDayEdit[day] || new Map<string, ClassroomConflictInfo[]>();
+                            const dayAvailRooms = rooms.filter((r) => !isClassroomConflicting(r, dayBusyMap));
+                            const dayRoomVal = editDailyRooms[day] || '';
+                            const isManualDay = Boolean(isCustomRoomEditByDay[day]);
+
+                            return (
+                              <div key={day} className="flex items-center gap-2">
+                                <span className="w-20 shrink-0 px-2 py-1.5 rounded-lg bg-white border border-slate-200 text-[11px] font-black text-slate-700 text-center">
+                                  {day}
+                                </span>
+                                {!isManualDay ? (
+                                  <select
+                                    className="flex-1 min-w-0 px-3 py-1.5 text-xs border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-bold bg-white text-slate-800"
+                                    value={dayRoomVal}
+                                    onChange={(e) => {
+                                      if (e.target.value === '__OTHER__') {
+                                        setIsCustomRoomEditByDay((prev) => ({ ...prev, [day]: true }));
+                                      } else {
+                                        setEditDailyRooms((prev) => ({ ...prev, [day]: e.target.value }));
+                                      }
+                                    }}
+                                  >
+                                    <option value="">-- انتخاب مَدرَس روز {day} --</option>
+                                    {dayRoomVal && !dayAvailRooms.some((r) => r.name === dayRoomVal) && (
+                                      <option value={dayRoomVal}>{dayRoomVal} (مَدرَس فعلی این روز)</option>
+                                    )}
+                                    <optgroup label="داخل مجموعه (آزاد در این روز)">
+                                      {dayAvailRooms.filter((r) => !r.isExternal).map((r) => (
+                                        <option key={r.id} value={r.name}>
+                                          {r.name} {r.code ? `(کد ${r.code})` : ''}
+                                        </option>
+                                      ))}
+                                    </optgroup>
+                                    <optgroup label="خارج از مجموعه">
+                                      {dayAvailRooms.filter((r) => r.isExternal).map((r) => (
+                                        <option key={r.id} value={r.name}>
+                                          📍 {r.name}
+                                        </option>
+                                      ))}
+                                      <option value="مدرسه امام باقر علیه السلام">📍 مدرسه امام باقر علیه السلام</option>
+                                      <option value="مدرسه امام حسین علیه السلام">📍 مدرسه امام حسین علیه السلام</option>
+                                      <option value="موسسه ائمه اطهار علیهم السلام">📍 موسسه ائمه اطهار علیهم السلام</option>
+                                    </optgroup>
+                                    <option value="__OTHER__">➕ ورود دستی نام مَدرَس...</option>
+                                  </select>
+                                ) : (
+                                  <input
+                                    type="text"
+                                    placeholder={`نام یا شماره مَدرَس در ${day}...`}
+                                    className="flex-1 min-w-0 px-3 py-1.5 text-xs border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-bold bg-white"
+                                    value={dayRoomVal}
+                                    onChange={(e) => setEditDailyRooms((prev) => ({ ...prev, [day]: e.target.value }))}
+                                  />
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => setIsCustomRoomEditByDay((prev) => ({ ...prev, [day]: !prev[day] }))}
+                                  className="px-2 py-1.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-[10px] font-bold text-slate-600 shrink-0 cursor-pointer"
+                                >
+                                  {isManualDay ? 'لیست' : 'دستی'}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ) : !isCustomRoomEdit ? (
                     <>
                       <select
                         className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold bg-white text-slate-800"
@@ -6481,7 +6832,7 @@ export default function Programs() {
                       <div>نام طلبه: <strong className="text-xs font-black">{student.name}</strong></div>
                       <div>نام درس: <strong className="font-extrabold">{targetEvalProgram.title || '-'}</strong></div>
                       <div>پایه تحصیلی: <strong className="font-extrabold">{student.grade || targetEvalProgram.grade || '-'}</strong> &nbsp;(کد: {student.studentCode || student.nationalId || '-'})</div>
-                      <div>زمان و مکان: <strong className="font-extrabold">{targetEvalProgram.time || '-'}</strong> &nbsp;(مَدرَس {targetEvalProgram.madrasRoom || '-'})</div>
+                      <div>زمان و مکان: <strong className="font-extrabold">{targetEvalProgram.time || '-'}</strong> &nbsp;(مَدرَس {getProgramRoomsSummary(targetEvalProgram) || '-'})</div>
                     </div>
                   </div>
                 </div>

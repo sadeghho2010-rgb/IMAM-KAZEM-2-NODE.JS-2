@@ -36,6 +36,96 @@ export function getProgramDays(p: { day?: string; days?: string[] }): string[] {
   return [raw];
 }
 
+export function normalizeWeekday(day?: string | null): string {
+  if (!day) return '';
+  const cleaned = String(day)
+    .trim()
+    .replace(/\u200c/g, ' ')
+    .replace(/\s+/g, ' ');
+  for (const wd of WEEK_DAYS) {
+    const wdClean = wd.replace(/\u200c/g, ' ').replace(/\s+/g, ' ');
+    if (cleaned === wdClean) return wd;
+  }
+  if (cleaned === 'سه شنبه') return 'سه‌شنبه';
+  if (cleaned === 'پنج شنبه' || cleaned === 'پنجشنبه') return 'پنج‌شنبه';
+  if (cleaned === 'یک شنبه' || cleaned === 'یکشنبه') return 'یکشنبه';
+  if (cleaned === 'دو شنبه' || cleaned === 'دوشنبه') return 'دوشنبه';
+  if (cleaned === 'چهار شنبه' || cleaned === 'چهارشنبه') return 'چهارشنبه';
+  return String(day).trim();
+}
+
+export function getProgramRoomForDay(
+  p: { madrasRoom?: string; classroom?: string; dailyMadrasRooms?: Record<string, string> },
+  day?: string | null
+): string {
+  const defaultRoom = (p.madrasRoom || p.classroom || '').trim();
+  if (!p.dailyMadrasRooms || typeof p.dailyMadrasRooms !== 'object') {
+    return defaultRoom;
+  }
+  if (!day) return defaultRoom;
+
+  if (typeof p.dailyMadrasRooms[day] === 'string' && p.dailyMadrasRooms[day].trim()) {
+    return p.dailyMadrasRooms[day].trim();
+  }
+
+  const targetNorm = normalizeWeekday(day);
+  for (const [k, v] of Object.entries(p.dailyMadrasRooms)) {
+    if (normalizeWeekday(k) === targetNorm && typeof v === 'string' && v.trim()) {
+      return v.trim();
+    }
+  }
+  return defaultRoom;
+}
+
+export function getProgramUniqueRooms(
+  p: { day?: string; days?: string[]; madrasRoom?: string; classroom?: string; dailyMadrasRooms?: Record<string, string> }
+): string[] {
+  const days = getProgramDays(p);
+  const rooms = new Set<string>();
+  const defaultRoom = (p.madrasRoom || p.classroom || '').trim();
+  if (p.dailyMadrasRooms && typeof p.dailyMadrasRooms === 'object' && Object.keys(p.dailyMadrasRooms).length > 0) {
+    days.forEach((d) => {
+      const r = getProgramRoomForDay(p, d);
+      if (r) rooms.add(r);
+    });
+    if (rooms.size === 0 && defaultRoom) rooms.add(defaultRoom);
+  } else if (defaultRoom) {
+    rooms.add(defaultRoom);
+  }
+  return Array.from(rooms);
+}
+
+export function hasPerDayDifferentRooms(
+  p: { day?: string; days?: string[]; madrasRoom?: string; classroom?: string; dailyMadrasRooms?: Record<string, string> }
+): boolean {
+  if (!p.dailyMadrasRooms || typeof p.dailyMadrasRooms !== 'object') return false;
+  const days = getProgramDays(p);
+  const perDayValues = days
+    .map((d) => getProgramRoomForDay(p, d))
+    .filter(Boolean);
+  if (perDayValues.length <= 1) return false;
+  return new Set(perDayValues).size > 1;
+}
+
+export function getProgramRoomsSummary(
+  p: { day?: string; days?: string[]; madrasRoom?: string; classroom?: string; dailyMadrasRooms?: Record<string, string> }
+): string {
+  const defaultRoom = (p.madrasRoom || p.classroom || '').trim();
+  if (!p.dailyMadrasRooms || typeof p.dailyMadrasRooms !== 'object' || Object.keys(p.dailyMadrasRooms).length === 0) {
+    return defaultRoom;
+  }
+  const days = getProgramDays(p);
+  const dayRooms: Array<{ day: string; room: string }> = [];
+  days.forEach((d) => {
+    const r = getProgramRoomForDay(p, d);
+    if (r) dayRooms.push({ day: d, room: r });
+  });
+  if (dayRooms.length === 0) return defaultRoom;
+  const uniqueRooms = Array.from(new Set(dayRooms.map((x) => x.room)));
+  if (uniqueRooms.length === 1) return uniqueRooms[0];
+  return dayRooms.map((x) => `${x.day}: ${x.room}`).join(' | ');
+}
+
 export function normalizeGrade(val?: string | number | null): string {
   if (val === undefined || val === null) return '';
   const str = String(val).trim();

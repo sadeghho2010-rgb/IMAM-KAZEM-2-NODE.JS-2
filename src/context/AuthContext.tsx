@@ -34,6 +34,7 @@ export const ALL_SYSTEM_TABS: SystemTabDef[] = [
   { id: 'counseling-classes', label: 'کلاس‌های مشاوره (ارزیابی و نمرات)', group: 'آموزش و تدریس', description: 'ثبت نمرات، کیفیت و مشارکت جلسات مشاوره' },
   { id: 'attendance', label: 'حضور و غیاب طلاب', group: 'آموزش و تدریس', description: 'ثبت غیبت، تاخیر، اخطارها و آمار حضور' },
   { id: 'held-sessions', label: 'تعداد جلسات برگزار شده', group: 'آموزش و تدریس', description: 'محاسبه جلسات تشکیل‌شده کلاس‌ها با تفکیک استاد اصلی، جایگزین و تعطیلات تقویم آموزشی' },
+  { id: 'announcements-management', label: 'مدیریت اطلاعیه‌ها', group: 'آموزش و تدریس', description: 'ثبت، فعال‌سازی و مدیریت اطلاعیه‌های پاپ‌آپ و زنگوله برای طلاب و کادر' },
   { id: 'student-access-management', label: 'مدیریت دسترسی بخش‌های طلاب', group: 'مدیریت طلاب و کاربران', description: 'فعال یا غیرفعال‌سازی بخش‌های پنل طلاب به صورت سراسری یا اختصاصی برای هر طلبه' },
 
   // مدیریت طلاب و کاربران
@@ -76,6 +77,7 @@ export const ALL_SYSTEM_TABS: SystemTabDef[] = [
   // مدیریت سیستم و امنیت
   { id: 'user-management', label: 'تنظیمات کاربران و سطوح دسترسی', group: 'مدیریت سیستم و امنیت', description: 'تعریف کاربران، تعیین منوها و مجوزهای ویرایش' },
   { id: 'user-credentials', label: 'مدیریت ورود کاربران', group: 'مدیریت سیستم و امنیت', description: 'تولید شناسه ورود، بازنشانی رمز و چاپ کارت' },
+  { id: 'maintenance-mode', label: 'حالت تعمیر سایت', group: 'مدیریت سیستم و امنیت', description: 'خارج کردن موقت سامانه از دسترس کاربران (ویژه سوپر ادمین و مسئول آموزش)' },
   { id: 'anomaly-detection', label: 'تشخیص ناهنجاری‌ها و رولبک', group: 'مدیریت سیستم و امنیت', description: 'سامانه هوشمند مانیتورینگ تغییرات مشکوک و بازگردانی سریع' },
   { id: 'backup', label: 'پشتیبان‌گیری دیتابیس', group: 'مدیریت سیستم و امنیت', description: 'دریافت نسخه پشتیبان JSON و بازیابی داده‌ها' },
   { id: 'system-health', label: 'سلامت سیستم', group: 'مدیریت سیستم و امنیت', description: 'پایش زنده مصرف رم، کوئری‌های کند و خطاهای سرور' },
@@ -123,10 +125,10 @@ export const DEFAULT_USERS: AppUser[] = [
     canManageUsers: false,
     canBackup: true,
     avatarBg: 'bg-slate-700',
-    allowedTabs: ALL_SYSTEM_TABS.filter(t => t.id !== 'user-management').map(t => t.id),
+    allowedTabs: ALL_SYSTEM_TABS.filter(t => t.id !== 'user-management' && t.id !== 'maintenance-mode' && t.id !== 'announcements-management').map(t => t.id),
     editableTabs: [],
     modulePermissions: ALL_SYSTEM_TABS.reduce((acc, tab) => {
-      acc[tab.id] = tab.id === 'user-management' ? 'none' : 'view';
+      acc[tab.id] = (tab.id === 'user-management' || tab.id === 'maintenance-mode' || tab.id === 'announcements-management') ? 'none' : 'view';
       return acc;
     }, {} as Record<string, 'none' | 'view' | 'edit'>),
   },
@@ -168,10 +170,26 @@ export const STUDENT_DEFAULT_ALLOWED_TABS: string[] = [
 ];
 
 function getDefaultRoleTabAllowed(tabId: string, user: AppUser): boolean {
+  const unameUpper = (user.username || '').toUpperCase();
+  if (tabId === 'maintenance-mode' || tabId === 'announcements-management') {
+    if (user.isReadOnly === true || user.role === 'school_manager' || unameUpper === 'RAHNAMA') {
+      return false;
+    }
+    return (
+      user.role === 'super_admin' ||
+      user.role === 'education_manager' ||
+      user.role === 'education_officer' ||
+      unameUpper === 'SHAH' ||
+      unameUpper === 'SHAHPOORI' ||
+      unameUpper === 'SADEGH' ||
+      user.level === 1
+    );
+  }
+
   if (user.level === 1) return true;
 
   const role = user.role;
-  const username = (user.username || '').toUpperCase();
+  const username = unameUpper;
 
   // Finance manager
   if (role === 'finance_manager' || role === 'financial_officer' || username === 'MALI') {
@@ -259,7 +277,18 @@ function getDefaultRoleTabEditable(tabId: string, user: AppUser): boolean {
     return role === 'education_manager' || role === 'education_officer' || username === 'SHAH';
   }
 
-  // Lockers, Student Access Management, and Held Sessions: education manager and super admin can edit
+  // Lockers, Student Access Management, Held Sessions, Maintenance Mode, Announcements Management
+  if (tabId === 'maintenance-mode' || tabId === 'announcements-management') {
+    return (
+      role === 'education_manager' ||
+      role === 'education_officer' ||
+      username === 'SHAH' ||
+      username === 'SHAHPOORI' ||
+      role === 'super_admin' ||
+      username === 'SADEGH'
+    );
+  }
+
   if (tabId === 'lockers' || tabId === 'student-access-management' || tabId === 'held-sessions') {
     return role === 'education_manager' || role === 'education_officer' || username === 'SHAH' || role === 'super_admin';
   }
@@ -328,6 +357,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 }
               }
 
+              const isMaintAuthorized =
+                u.isReadOnly !== true &&
+                u.canEdit !== false &&
+                u.role !== 'school_manager' &&
+                uname !== 'RAHNAMA' &&
+                (u.role === 'super_admin' ||
+                  uname === 'SADEGH' ||
+                  u.level === 1 ||
+                  u.role === 'education_manager' ||
+                  u.role === 'education_officer' ||
+                  uname === 'SHAH' ||
+                  uname === 'SHAHPOORI');
+
+              if (isMaintAuthorized) {
+                ['maintenance-mode', 'announcements-management'].forEach((tKey) => {
+                  if (!allowedTabs.includes(tKey)) allowedTabs.push(tKey);
+                  if (!editableTabs.includes(tKey)) editableTabs.push(tKey);
+                  if (!modulePermissions[tKey] || modulePermissions[tKey] === 'none') {
+                    modulePermissions[tKey] = 'edit';
+                  }
+                });
+              }
+
               userMap.set(uname, {
                 ...existingDef,
                 ...u,
@@ -379,6 +431,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (!modulePermissions['system-health'] || modulePermissions['system-health'] === 'none') {
               modulePermissions['system-health'] = 'edit';
             }
+          }
+
+          const isMaintAuthorized =
+            parsed.isReadOnly !== true &&
+            parsed.canEdit !== false &&
+            parsed.role !== 'school_manager' &&
+            uname !== 'RAHNAMA' &&
+            (parsed.role === 'super_admin' ||
+              uname === 'SADEGH' ||
+              parsed.level === 1 ||
+              parsed.role === 'education_manager' ||
+              parsed.role === 'education_officer' ||
+              uname === 'SHAH' ||
+              uname === 'SHAHPOORI');
+
+          if (isMaintAuthorized) {
+            ['maintenance-mode', 'announcements-management'].forEach((tKey) => {
+              if (!allowedTabs.includes(tKey)) allowedTabs.push(tKey);
+              if (!editableTabs.includes(tKey)) editableTabs.push(tKey);
+              if (!modulePermissions[tKey] || modulePermissions[tKey] === 'none') {
+                modulePermissions[tKey] = 'edit';
+              }
+            });
           }
 
           const resolvedUser: AppUser = {
@@ -1621,6 +1696,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return target.level === 1 && target.role === 'super_admin';
     }
 
+    // Maintenance Mode & Announcements Management: Exclusively for non-read-only Super Admin and Education Officer
+    if (tabId === 'maintenance-mode' || tabId === 'announcements-management') {
+      const unameUpper = (target.username || '').toUpperCase();
+      if (target.isReadOnly === true || target.canEdit === false || target.role === 'school_manager' || unameUpper === 'RAHNAMA') {
+        return false;
+      }
+      const isMaintAuth =
+        target.role === 'super_admin' ||
+        unameUpper === 'SADEGH' ||
+        target.level === 1 ||
+        target.role === 'education_manager' ||
+        target.role === 'education_officer' ||
+        unameUpper === 'SHAH' ||
+        unameUpper === 'SHAHPOORI';
+      if (!isMaintAuth) return false;
+      if (target.modulePermissions && target.modulePermissions[tabId] === 'none') {
+        return false;
+      }
+      return true;
+    }
+
     // Lockers, Student Access Management, and Held Sessions: Always available to Education Manager and Super Admin unless explicitly set to 'none'
     const isEduOrAdmin = target.role === 'education_manager' || target.role === 'education_officer' || (target.username || '').toUpperCase() === 'SHAH' || target.level === 1;
     if ((tabId === 'lockers' || tabId === 'student-access-management' || tabId === 'held-sessions') && isEduOrAdmin) {
@@ -1696,6 +1792,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // 2. Super Admin can edit all allowed modules (unless explicitly set to view-only for testing)
     if (target.level === 1 && target.role === 'super_admin') {
+      if (target.modulePermissions && target.modulePermissions[tabId] === 'view') {
+        return false;
+      }
+      return true;
+    }
+
+    // Maintenance Mode & Announcements Management: Exclusively editable by non-read-only Super Admin and Education Officer
+    if (tabId === 'maintenance-mode' || tabId === 'announcements-management') {
+      const unameUpper = (target.username || '').toUpperCase();
+      if (target.role === 'school_manager' || unameUpper === 'RAHNAMA') return false;
+      const isMaintAuth =
+        target.role === 'super_admin' ||
+        unameUpper === 'SADEGH' ||
+        target.level === 1 ||
+        target.role === 'education_manager' ||
+        target.role === 'education_officer' ||
+        unameUpper === 'SHAH' ||
+        unameUpper === 'SHAHPOORI';
+      if (!isMaintAuth) return false;
       if (target.modulePermissions && target.modulePermissions[tabId] === 'view') {
         return false;
       }

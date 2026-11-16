@@ -18,7 +18,7 @@ import {
   MADRAS_HOURLY_SLOTS_7_TO_17, 
   WEEK_DAYS_SEMINARY, 
   isActiveMadrasProgram,
-  isProgramInRoom, 
+  isProgramInRoomForDay,
   isDayMatch, 
   isProgramInTimeRange, 
   timeToMinutes,
@@ -166,11 +166,10 @@ export default function MadrasEmptyFinder({
       // 3. Check for conflicting active programs during the day(s) and time range
       const conflicts = programs.filter(prog => {
         if (!isActiveMadrasProgram(prog)) return false;
-        if (!isProgramInRoom(prog, room)) return false;
 
-        // Day match
-        const matchesAnyDay = daysToCheck.some(day => isDayMatch(prog, day));
-        if (!matchesAnyDay) return false;
+        // Day + per-day room match
+        const matchesAnyDayInRoom = daysToCheck.some(day => isDayMatch(prog, day) && isProgramInRoomForDay(prog, room, day));
+        if (!matchesAnyDayInRoom) return false;
 
         // Time overlap match
         return isProgramInTimeRange(prog, timeRange.startMinutes, timeRange.endMinutes);

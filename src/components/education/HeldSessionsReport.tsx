@@ -43,7 +43,7 @@ import {
   SHAMSI_MONTH_NAMES
 } from '../../lib/jalali';
 import ShamsiDatePicker from '../ShamsiDatePicker';
-import { cn } from '../../lib/utils';
+import { cn, getProgramRoomsSummary } from '../../lib/utils';
 import { useIsAdminMobile } from '../admin/mobile/AdminMobileContext';
 import { MobileSectionHeader, MobileSearchFilterBar } from '../admin/mobile/MobileModulePrimitives';
 
@@ -498,7 +498,7 @@ export default function HeldSessionsReport() {
         const matchTitle = (p.title || '').toLowerCase().includes(q);
         const matchBook = (p.subjectBook || '').toLowerCase().includes(q);
         const matchTeacher = tName.toLowerCase().includes(q);
-        const matchRoom = (p.madrasRoom || '').toLowerCase().includes(q);
+        const matchRoom = (getProgramRoomsSummary(p) || p.madrasRoom || '').toLowerCase().includes(q);
         if (!matchTitle && !matchBook && !matchTeacher && !matchRoom) return false;
       }
       return true;
@@ -894,9 +894,9 @@ export default function HeldSessionsReport() {
                     <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500">
                       <Clock size={13} className="text-indigo-500" />
                       <span>{program.time || 'ساعت نامشخص'}</span>
-                      {program.madrasRoom && (
+                      {getProgramRoomsSummary(program) && (
                         <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 font-black">
-                          مَدرَس {program.madrasRoom}
+                          مَدرَس {getProgramRoomsSummary(program)}
                         </span>
                       )}
                     </div>

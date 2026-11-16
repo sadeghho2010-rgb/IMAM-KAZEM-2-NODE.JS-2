@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { Clock, User, DoorOpen, BookOpen } from 'lucide-react';
-import { cn, getProgramDays } from '../../../lib/utils';
+import { cn, getProgramDays, getProgramRoomForDay } from '../../../lib/utils';
 import { localDb } from '../../../lib/localDb';
 import { useAuth } from '../../../context/AuthContext';
 import { Program, Student, Enrollment } from '../../../types';
@@ -302,15 +302,19 @@ export const StudentMobileSchedule: React.FC<StudentMobileScheduleProps> = () =>
                             <User size={12} className="text-slate-400 shrink-0" />
                             <span>استاد: {p.teacher || 'تعیین‌نشده'}</span>
                           </span>
-                          {p.madrasRoom && (
-                            <>
-                              <span className="text-slate-300">·</span>
-                              <span className="flex items-center gap-1 text-indigo-700 font-bold">
-                                <DoorOpen size={12} className="shrink-0" />
-                                <span>مَدرَس {p.madrasRoom}</span>
-                              </span>
-                            </>
-                          )}
+                          {(() => {
+                            const dayRoom = getProgramRoomForDay(p, selectedDay);
+                            if (!dayRoom) return null;
+                            return (
+                              <>
+                                <span className="text-slate-300">·</span>
+                                <span className="flex items-center gap-1 text-indigo-700 font-bold">
+                                  <DoorOpen size={12} className="shrink-0" />
+                                  <span>مَدرَس {dayRoom}</span>
+                                </span>
+                              </>
+                            );
+                          })()}
                           {p.subjectBook && (
                             <>
                               <span className="text-slate-300">·</span>

@@ -17,6 +17,8 @@ import { TabErrorBoundary } from './components/TabErrorBoundary';
 import BugReportModal from './components/BugReportModal';
 import { localDb } from './lib/localDb';
 import { GlobalSaveFeedbackOverlay } from './components/GlobalSaveFeedbackOverlay';
+import MaintenanceOverlayGate from './components/common/MaintenanceOverlayGate';
+import AnnouncementCenter from './components/common/AnnouncementCenter';
 
 // Lazy loading all tab components for maximum initial page load speed
 const StudentList = lazy(() => import('./components/StudentList'));
@@ -35,6 +37,8 @@ const DbSaveErrorsView = lazy(() => import('./components/DbSaveErrorsView'));
 const EducationFinancialReportSettings = lazy(() => import('./components/education/EducationFinancialReportSettings'));
 const TeacherTransportManagement = lazy(() => import('./components/education/TeacherTransportManagement'));
 const HeldSessionsReport = lazy(() => import('./components/education/HeldSessionsReport'));
+const AnnouncementsManagement = lazy(() => import('./components/education/AnnouncementsManagement'));
+const MaintenanceModeManagement = lazy(() => import('./components/admin/MaintenanceModeManagement'));
 const StudentAccessManagement = lazy(() => import('./components/education/StudentAccessManagement'));
 const StudentWarningsManagement = lazy(() => import('./components/student/StudentWarningsManagement'));
 const TodoList = lazy(() => import('./components/TodoList'));
@@ -117,6 +121,7 @@ const TAB_PARENT_CATEGORY_MAP: Record<string, string> = {
   'oral-exams': 'education_group',
   'academic-calendar': 'education_group',
   'held-sessions': 'education_group',
+  'announcements-management': 'education_group',
   'teachers-bank': 'education_group',
 
   'student-requests': 'requests_group',
@@ -151,6 +156,7 @@ const TAB_PARENT_CATEGORY_MAP: Record<string, string> = {
 
   'user-management': 'security_group',
   'user-credentials': 'security_group',
+  'maintenance-mode': 'system_group',
   'anomaly-detection': 'security_group',
   'backup': 'security_group',
   'audit-logs': 'security_group',
@@ -378,6 +384,8 @@ function AppContent() {
       case 'teacher-transport': return 'سرویس و ایاب و ذهاب اساتید';
       case 'education-financial-report': return 'تنظیم گزارش مالی طلاب';
       case 'held-sessions': return 'تعداد جلسات برگزار شده کلاس‌های درس';
+      case 'announcements-management': return 'مدیریت اطلاعیه‌های سامانه';
+      case 'maintenance-mode': return 'مدیریت حالت تعمیر و نگهداری سایت';
       case 'student-access-management': return 'مدیریت دسترسی بخش‌های پنل طلاب';
       case 'passed-courses': return 'دروس گذرانده شده و کارنامه';
       case 'security-pin-settings': return 'پین امنیتی حساب کاربری';
@@ -580,6 +588,10 @@ function AppContent() {
         return <EducationFinancialReportSettings onNavigateTab={handleNavigate} />;
       case 'held-sessions':
         return <HeldSessionsReport />;
+      case 'announcements-management':
+        return <AnnouncementsManagement />;
+      case 'maintenance-mode':
+        return <MaintenanceModeManagement />;
       case 'student-access-management':
         return <StudentAccessManagement />;
       case 'user-management':
@@ -781,6 +793,9 @@ function AppContent() {
 
             {/* Top Right Header Space - User Badge & Logout */}
             <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+              {/* Global Announcements Bell & Startup Popup */}
+              <AnnouncementCenter variant="light" />
+
               {/* In-App PWA Install Button for Mobile & Desktop */}
               <PWAInstallButton variant="header" />
 
@@ -952,7 +967,9 @@ export default function App() {
       <AuthProvider>
         <MentorProvider>
           <GlobalSaveFeedbackOverlay />
-          <AppContent />
+          <MaintenanceOverlayGate>
+            <AppContent />
+          </MaintenanceOverlayGate>
         </MentorProvider>
       </AuthProvider>
     </ErrorBoundary>
