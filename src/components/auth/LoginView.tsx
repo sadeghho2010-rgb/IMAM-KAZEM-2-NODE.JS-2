@@ -39,6 +39,20 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [showIntroFlare, setShowIntroFlare] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    if (!showIntroFlare) return;
+    const timer = window.setTimeout(() => setShowIntroFlare(false), 1300);
+    return () => window.clearTimeout(timer);
+  }, [showIntroFlare]);
 
   // 2-Step PIN verification modal state
   const [showPinPrompt, setShowPinPrompt] = useState(false);
@@ -328,47 +342,46 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
       {/* 2. Main Login Box: Centered Exactly in the Middle */}
       <div className="relative z-10 w-full max-w-[440px] flex items-center justify-center">
         <div className="relative group/card w-full">
-          {/* Subtle warm champagne-gold & sapphire outer aura */}
-          <div className="absolute -inset-1 rounded-[30px] bg-gradient-to-b from-amber-300/25 via-sky-400/15 to-amber-500/20 opacity-75 blur-xl group-hover/card:opacity-95 transition-opacity duration-700 pointer-events-none" />
-
-          {/* Crisp metallic hairline outer border */}
-          <div className="absolute -inset-[1px] rounded-[28px] bg-gradient-to-b from-amber-200/45 via-white/15 to-sky-300/30 pointer-events-none" />
-
-          {/* The Login Glassmorphic Window */}
-          <motion.div
-            id="login-glass-card"
-            initial={{ opacity: 0, scale: 0.96, y: 14 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
-            className="relative z-10 w-full rounded-[27px] bg-[#0a1328]/92 backdrop-blur-2xl border border-white/10 p-6 sm:p-8 text-white shadow-[0_28px_80px_-20px_rgba(0,0,0,0.85)] overflow-hidden max-h-[92vh] overflow-y-auto"
+          {/* Tight soft glow that follows the moving white border strip */}
+          <div
+            aria-hidden="true"
+            className="absolute -inset-[1px] rounded-[29px] overflow-hidden blur-[6px] opacity-65 pointer-events-none"
           >
+            <div className="login-border-beam" />
+          </div>
+
+          {/* Crisp 2px Luminous White Border Strip Frame */}
+          <div className="relative p-[2px] rounded-[29px] overflow-hidden bg-white/15 shadow-[0_28px_80px_-20px_rgba(0,0,0,0.85)]">
+            <div aria-hidden="true" className="login-border-beam pointer-events-none" />
+
+            {/* The Login Glassmorphic Window */}
+            <motion.div
+              id="login-glass-card"
+              initial={{ opacity: 0, scale: 0.96, y: 14 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
+              className="relative z-10 w-full rounded-[27px] bg-[#0a1328]/96 backdrop-blur-2xl p-6 sm:p-8 text-white overflow-hidden max-h-[92vh] overflow-y-auto"
+            >
             {/* Top gold architectural hairline reflection */}
             <div className="absolute top-0 inset-x-10 h-[2px] bg-gradient-to-r from-transparent via-amber-300/80 to-transparent pointer-events-none" />
 
             {/* Subtle internal corner glow */}
             <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-64 h-36 bg-amber-400/12 rounded-full blur-3xl pointer-events-none" />
 
-            {/* Header: Seminary identity with Radiant Opening Light Flash Reveal */}
+            {/* Header: Seminary identity */}
             <div className="relative text-center space-y-3 mb-6 pt-1">
-              {/* Opening Golden Light Flash (Blooms & fades gently as the title emerges) */}
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute top-14 left-1/2 w-64 h-64 rounded-full login-light-burst"
-                style={{
-                  background:
-                    'radial-gradient(circle, rgba(254, 243, 199, 0.85) 0%, rgba(245, 189, 86, 0.42) 32%, rgba(56, 189, 248, 0.14) 58%, transparent 74%)'
-                }}
-              />
-              {/* Horizontal Prism Flare passing across the emblem/title on reveal */}
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute top-[5.25rem] left-1/2 w-full h-[2px] login-horizon-flare"
-                style={{
-                  background:
-                    'linear-gradient(90deg, transparent 0%, rgba(253, 230, 138, 0.35) 20%, rgba(255, 255, 255, 0.98) 50%, rgba(253, 230, 138, 0.35) 80%, transparent 100%)',
-                  boxShadow: '0 0 22px 4px rgba(251, 191, 36, 0.55)'
-                }}
-              />
+              {/* Subtle Horizontal Prism Flare (Auto-unmounts after reveal so nothing lingers on laptop) */}
+              {showIntroFlare && (
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute top-[5.25rem] left-1/2 w-full h-[2px] login-horizon-flare"
+                  style={{
+                    background:
+                      'linear-gradient(90deg, transparent 0%, rgba(253, 230, 138, 0.35) 20%, rgba(255, 255, 255, 0.98) 50%, rgba(253, 230, 138, 0.35) 80%, transparent 100%)',
+                    boxShadow: '0 0 22px 4px rgba(251, 191, 36, 0.55)'
+                  }}
+                />
+              )}
 
               {/* Geometric Seminary Emblem */}
               <motion.div
@@ -688,9 +701,10 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
           <Sparkles size={12} className="text-amber-300" />
           <span>نسخه ۵.۲.۰ • ارتباط امن و رمزنگاری داده‌ها</span>
         </div>
-      </motion.div>
-    </div>
-  </div>
+            </motion.div>
+          </div>
+        </div>
+      </div>
 
       {/* 2-Step PIN Verification Modal (ورود دو مرحله‌ای با پین ۴ رقمی) */}
       <AnimatePresence>

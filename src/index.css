@@ -780,10 +780,14 @@ html, body {
 }
 
 .login-light-burst {
+  opacity: 0;
+  pointer-events: none;
   animation: loginLightBurst 1.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .login-horizon-flare {
+  opacity: 0;
+  pointer-events: none;
   animation: loginHorizonFlare 1.15s cubic-bezier(0.22, 1, 0.36, 1) 0.08s forwards;
 }
 
@@ -804,25 +808,73 @@ html, body {
   animation: loginTitleGoldSweep 5.5s ease-in-out 0.55s infinite;
 }
 
+/* Crisp traveling luminous white border strip around login card */
+@keyframes loginBorderBeamSpin {
+  0% {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+  100% {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+.login-border-beam {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 220%;
+  aspect-ratio: 1 / 1;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 58deg,
+    rgba(255, 255, 255, 0.22) 74deg,
+    rgba(255, 255, 255, 0.98) 90deg,
+    rgba(255, 255, 255, 0.22) 106deg,
+    transparent 122deg,
+    transparent 238deg,
+    rgba(255, 255, 255, 0.18) 254deg,
+    rgba(255, 255, 255, 0.9) 270deg,
+    rgba(255, 255, 255, 0.18) 286deg,
+    transparent 302deg,
+    transparent 360deg
+  );
+  animation: loginBorderBeamSpin 6s linear infinite;
+  will-change: transform;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .login-light-burst,
-  .login-horizon-flare,
-  .login-title-luminous {
+  .login-horizon-flare {
+    display: none !important;
+    opacity: 0 !important;
     animation: none !important;
   }
+  .login-border-beam {
+    animation: none !important;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.7));
+  }
   .login-title-luminous {
+    animation: none !important;
     background-image: none;
     color: #d1fae5;
   }
 }
 
 .disable-animations .login-light-burst,
-.disable-animations .login-horizon-flare,
-.disable-animations .login-title-luminous {
+.disable-animations .login-horizon-flare {
+  display: none !important;
+  opacity: 0 !important;
   animation: none !important;
 }
 
+.disable-animations .login-border-beam {
+  animation: none !important;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.7));
+}
+
 .disable-animations .login-title-luminous {
+  animation: none !important;
   background-image: none;
   color: #d1fae5;
 }
