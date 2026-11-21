@@ -520,7 +520,11 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   };
 
   useEffect(() => {
-    loadData(true);
+    localDb.syncCollectionFromCloud('student_requests', true)
+      .catch(() => {})
+      .finally(() => {
+        loadData(true);
+      });
     const unsub = localDb.subscribe(() => {
       loadData(false);
     });
@@ -529,7 +533,8 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       try {
         await Promise.all([
           localDb.syncCollectionFromCloud('attendance', true),
-          localDb.syncCollectionFromCloud('workflow_items', true)
+          localDb.syncCollectionFromCloud('workflow_items', true),
+          localDb.syncCollectionFromCloud('student_requests', true)
         ]);
       } catch (e) {
         console.warn('[STORAGE_FAILURE] Cloud sync in AttendanceAndStats failed:', e);
@@ -540,15 +545,18 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     window.addEventListener('app_data_change', handleDataEvent);
     window.addEventListener('attendance_updated', handleDataEvent);
     window.addEventListener('workflow_items_updated', handleDataEvent);
+    window.addEventListener('student_requests_updated', handleDataEvent);
     window.addEventListener('collection_change_attendance', handleDataEvent);
     window.addEventListener('collection_change_workflow_items', handleDataEvent);
+    window.addEventListener('collection_change_student_requests', handleDataEvent);
 
-    // Fast sync polling (every 3 seconds) for Education Manager to fetch fresh attendance & warning changes from cloud
+    // Fast sync polling (every 3 seconds) for Education Manager to fetch fresh attendance, warning & leave request changes from cloud
     const fastSyncTimer = setInterval(async () => {
       try {
         await Promise.all([
           localDb.syncCollectionFromCloud('attendance', true),
-          localDb.syncCollectionFromCloud('workflow_items', true)
+          localDb.syncCollectionFromCloud('workflow_items', true),
+          localDb.syncCollectionFromCloud('student_requests', false)
         ]);
         await loadData(false);
       } catch (e) {
@@ -561,11 +569,22 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       window.removeEventListener('app_data_change', handleDataEvent);
       window.removeEventListener('attendance_updated', handleDataEvent);
       window.removeEventListener('workflow_items_updated', handleDataEvent);
+      window.removeEventListener('student_requests_updated', handleDataEvent);
       window.removeEventListener('collection_change_attendance', handleDataEvent);
       window.removeEventListener('collection_change_workflow_items', handleDataEvent);
+      window.removeEventListener('collection_change_student_requests', handleDataEvent);
       clearInterval(fastSyncTimer);
     };
   }, []);
+
+  // Force fresh cloud sync whenever switching directly into the Leave Requests tab in AttendanceAndStats
+  useEffect(() => {
+    if (activeTab === 'leave_requests') {
+      localDb.syncCollectionFromCloud('student_requests', true)
+        .then(() => loadData(false))
+        .catch(() => {});
+    }
+  }, [activeTab]);
 
   // Save Settings
   const handleSaveSettings = async (newSettings: AttendanceSettings) => {

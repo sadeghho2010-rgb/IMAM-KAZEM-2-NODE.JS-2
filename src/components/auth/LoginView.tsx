@@ -342,26 +342,14 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
       {/* 2. Main Login Box: Centered Exactly in the Middle */}
       <div className="relative z-10 w-full max-w-[440px] flex items-center justify-center">
         <div className="relative group/card w-full">
-          {/* Tight soft glow that follows the moving white border strip */}
-          <div
-            aria-hidden="true"
-            className="absolute -inset-[1px] rounded-[29px] overflow-hidden blur-[6px] opacity-65 pointer-events-none"
+          {/* The Login Glassmorphic Window with Continuous White Neon Tube Border */}
+          <motion.div
+            id="login-glass-card"
+            initial={{ opacity: 0, scale: 0.96, y: 14 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
+            className="relative z-10 w-full rounded-[27px] bg-[#0a1328]/94 backdrop-blur-2xl border-[1.5px] border-white/90 p-6 sm:p-8 text-white shadow-[0_0_5px_rgba(255,255,255,0.75),0_0_14px_rgba(255,255,255,0.30),0_0_26px_rgba(255,255,255,0.12),inset_0_0_8px_rgba(255,255,255,0.14),0_28px_80px_-20px_rgba(0,0,0,0.85)] overflow-hidden max-h-[92vh] overflow-y-auto"
           >
-            <div className="login-border-beam" />
-          </div>
-
-          {/* Crisp 2px Luminous White Border Strip Frame */}
-          <div className="relative p-[2px] rounded-[29px] overflow-hidden bg-white/15 shadow-[0_28px_80px_-20px_rgba(0,0,0,0.85)]">
-            <div aria-hidden="true" className="login-border-beam pointer-events-none" />
-
-            {/* The Login Glassmorphic Window */}
-            <motion.div
-              id="login-glass-card"
-              initial={{ opacity: 0, scale: 0.96, y: 14 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
-              className="relative z-10 w-full rounded-[27px] bg-[#0a1328]/96 backdrop-blur-2xl p-6 sm:p-8 text-white overflow-hidden max-h-[92vh] overflow-y-auto"
-            >
             {/* Top gold architectural hairline reflection */}
             <div className="absolute top-0 inset-x-10 h-[2px] bg-gradient-to-r from-transparent via-amber-300/80 to-transparent pointer-events-none" />
 
@@ -701,8 +689,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
           <Sparkles size={12} className="text-amber-300" />
           <span>نسخه ۵.۲.۰ • ارتباط امن و رمزنگاری داده‌ها</span>
         </div>
-            </motion.div>
-          </div>
+          </motion.div>
         </div>
       </div>
 

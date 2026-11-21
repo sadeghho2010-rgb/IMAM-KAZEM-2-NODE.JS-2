@@ -351,6 +351,29 @@ export function authorizeCollectionAccess(
     return { allowed: true };
   }
 
+  // Student Requests Protection: Students can read/submit/reply, but ONLY Admins & Unit Officers can delete records
+  if (collection === 'student_requests' && action === 'delete') {
+    const uName = String(user.username || '').toUpperCase();
+    const canDeleteRequests =
+      user.level === 1 ||
+      user.role === 'super_admin' ||
+      user.role === 'school_manager' ||
+      user.role === 'education_manager' ||
+      user.role === 'education_officer' ||
+      user.role === 'finance_manager' ||
+      user.role === 'financial_officer' ||
+      user.role === 'cultural_officer' ||
+      uName === 'SADEGH' ||
+      uName === 'SHAH' ||
+      uName === 'SHAHPOORI' ||
+      uName === 'MALI' ||
+      uName === 'RAHNAMA';
+    if (!canDeleteRequests) {
+      return { allowed: false, reason: 'حذف درخواست‌های ثبت‌شده منحصراً در اختیار مسئولین واحدها و مدیر سامانه است.' };
+    }
+    return { allowed: true };
+  }
+
   // Research and Article Evaluation
   if (collection === 'received_articles' || collection === 'evaluation_requests') {
     if (user.level === 3 && action === 'write') {

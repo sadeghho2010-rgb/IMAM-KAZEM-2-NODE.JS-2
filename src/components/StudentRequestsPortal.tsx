@@ -196,9 +196,19 @@ export default function StudentRequestsPortal() {
       setIsLoading(true);
     }
     try {
-      // 1. Load Requests from localDb + Server Direct Fetch
+      // 1. Authoritative cloud sync first (respects local pending writes + updates both IndexedDB & localStorage cleanly)
+      let freshRequests: StudentRequest[] = [];
+      try {
+        const synced = await localDb.syncCollectionFromCloud('student_requests', true);
+        if (Array.isArray(synced)) {
+          freshRequests = synced as StudentRequest[];
+        }
+      } catch (srvErr) {}
+
       const [reqList, progsList] = await Promise.all([
-        localDb.getDocs<StudentRequest>('student_requests'),
+        freshRequests.length > 0
+          ? Promise.resolve(freshRequests)
+          : localDb.getDocs<StudentRequest>('student_requests'),
         localDb.getDocs<Program>('programs')
       ]);
 
@@ -206,33 +216,9 @@ export default function StudentRequestsPortal() {
         setPrograms(progsList);
       }
 
-      let freshRequests = Array.isArray(reqList) ? reqList : [];
-
-      // Direct server query when online to guarantee instant sync across browsers
-      try {
-        const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
-        const headers: Record<string, string> = {};
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-
-        const apiRes = await fetch(`/api/data/student_requests?_t=${Date.now()}`, {
-          method: 'GET',
-          headers: {
-            ...headers,
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache'
-          },
-          cache: 'no-store'
-        });
-
-        if (apiRes.ok) {
-          const json = await apiRes.json();
-          if (json.success && Array.isArray(json.items)) {
-            freshRequests = json.items;
-            // Mirror server fresh requests into local storage cache
-            (localDb as any).setLocalStorageDocs('student_requests', freshRequests);
-          }
-        }
-      } catch (srvErr) {}
+      if (freshRequests.length === 0 && Array.isArray(reqList)) {
+        freshRequests = reqList;
+      }
 
       setRequests(prev => {
         if (prev.length === freshRequests.length && JSON.stringify(prev) === JSON.stringify(freshRequests)) {
@@ -271,24 +257,10 @@ export default function StudentRequestsPortal() {
   };
 
   useEffect(() => {
-    // Initial auto-purge of test requests per user request
-    const PURGE_KEY = 'purged_all_test_requests_v8';
-    if (localStorage.getItem(PURGE_KEY) !== 'true') {
-      localDb.getDocs<StudentRequest>('student_requests').then(list => {
-        if (Array.isArray(list) && list.length > 0) {
-          list.forEach(r => {
-            localDb.deleteDoc('student_requests', r.id).catch(() => {});
-            fetch(`/api/data/student_requests/${r.id}`, { method: 'DELETE' }).catch(() => {});
-          });
-          setRequests([]);
-          window.dispatchEvent(new CustomEvent('student_requests_updated'));
-          window.dispatchEvent(new CustomEvent('app_data_change'));
-        }
-        localStorage.setItem(PURGE_KEY, 'true');
-      }).catch(() => {
-        localStorage.setItem(PURGE_KEY, 'true');
-      });
-    }
+    // Safeguard: ensure legacy one-time purge flag is marked completed without ever deleting any real requests
+    try {
+      localStorage.setItem('purged_all_test_requests_v8', 'true');
+    } catch {}
 
     loadData(false);
 
@@ -534,13 +506,21 @@ export default function StudentRequestsPortal() {
     };
 
     try {
-      await localDb.saveDoc('student_requests', newReqId, newRecord);
-      setRequests(prev => [newRecord, ...prev]);
+      const strictRes = await localDb.setDocStrict('student_requests', newRecord, 20000);
+      const savedRecord: StudentRequest = strictRes.success && strictRes.item ? strictRes.item : newRecord;
+      if (!strictRes.success) {
+        await localDb.saveDoc('student_requests', newReqId, newRecord);
+      }
+      setRequests(prev => [savedRecord, ...prev.filter(r => r.id !== savedRecord.id)]);
       setShowNewRequestModal(false);
       setNewTitle('');
       setNewDescription('');
       triggerUpdateEvent();
-      alert('✅ درخواست شما با موفقیت ثبت گردید و برای مسئول مربوطه ارسال شد.');
+      alert(
+        strictRes.success
+          ? '✅ درخواست شما با موفقیت در دیتابیس ثبت گردید و برای مسئول مربوطه ارسال شد.'
+          : '✅ درخواست شما ثبت شد و در صف همگام‌سازی خودکار با سرور قرار گرفت.'
+      );
     } catch (err: any) {
       alert('خطا در ثبت درخواست: ' + (err?.message || ''));
     } finally {
@@ -605,13 +585,21 @@ export default function StudentRequestsPortal() {
     };
 
     try {
-      await localDb.saveDoc('student_requests', newReqId, newRecord);
-      setRequests(prev => [newRecord, ...prev]);
+      const strictRes = await localDb.setDocStrict('student_requests', newRecord, 20000);
+      const savedRecord: StudentRequest = strictRes.success && strictRes.item ? strictRes.item : newRecord;
+      if (!strictRes.success) {
+        await localDb.saveDoc('student_requests', newReqId, newRecord);
+      }
+      setRequests(prev => [savedRecord, ...prev.filter(r => r.id !== savedRecord.id)]);
       setShowLeaveRequestModal(false);
       setLeaveAbsenceReason('');
       setSelectedClassesForLeave([]);
       triggerUpdateEvent();
-      alert('✅ درخواست مرخصی شما با موفقیت برای مسئول آموزش ارسال گردید.');
+      alert(
+        strictRes.success
+          ? '✅ درخواست مرخصی شما با موفقیت در سرور ثبت و برای مسئول آموزش ارسال گردید.'
+          : '✅ درخواست مرخصی ثبت شد و در صف همگام‌سازی خودکار با سرور قرار گرفت.'
+      );
     } catch (err: any) {
       alert('خطا در ثبت درخواست مرخصی: ' + (err?.message || ''));
     } finally {
