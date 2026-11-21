@@ -24,10 +24,22 @@ import {
   Ban,
   FileCheck,
   ShieldAlert,
-  Info
+  Info,
+  X
 } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { cn, normalizeDigits } from '../../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+
+function normalizeSearchText(value?: string | null): string {
+  if (!value) return '';
+  return normalizeDigits(String(value))
+    .replace(/ي/g, 'ی')
+    .replace(/ى/g, 'ی')
+    .replace(/ك/g, 'ک')
+    .replace(/\u200c/g, ' ')
+    .trim()
+    .toLowerCase();
+}
 
 const TAB_CATEGORIES = [
   'همه دسته‌ها',
@@ -337,9 +349,19 @@ export default function UserManagementSettings() {
 
   const filteredUsers = users.filter(u => {
     if (filterLevel !== 'all' && u.level !== filterLevel) return false;
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      return u.name.toLowerCase().includes(term) || u.username.toLowerCase().includes(term) || u.roleTitle.toLowerCase().includes(term);
+    const term = normalizeSearchText(searchTerm);
+    if (term) {
+      const searchableFields = [
+        u.name,
+        u.fullName,
+        u.username,
+        u.roleTitle,
+        u.nationalId,
+        u.phone,
+        u.gradeLabel,
+        u.studentName
+      ];
+      return searchableFields.some(field => normalizeSearchText(field).includes(term));
     }
     return true;
   });
@@ -460,49 +482,73 @@ export default function UserManagementSettings() {
         </div>
       </div>
 
-      {/* Filters & Search Bar */}
-      <div className="bg-white rounded-2xl p-3 border border-slate-200/90 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <span className="text-xs font-bold text-slate-500">فیلتر سطح:</span>
-          <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-bold">
-            <button
-              onClick={() => setFilterLevel('all')}
-              className={cn("px-3 py-1 rounded-lg transition-all", filterLevel === 'all' ? "bg-white text-slate-900 shadow-xs" : "text-slate-500")}
-            >
-              همه ({users.length})
-            </button>
-            <button
-              onClick={() => setFilterLevel(1)}
-              className={cn("px-3 py-1 rounded-lg transition-all", filterLevel === 1 ? "bg-white text-indigo-700 shadow-xs" : "text-slate-500")}
-            >
-              سطح ۱
-            </button>
-            <button
-              onClick={() => setFilterLevel(2)}
-              className={cn("px-3 py-1 rounded-lg transition-all", filterLevel === 2 ? "bg-white text-amber-700 shadow-xs" : "text-slate-500")}
-            >
-              سطح ۲
-            </button>
-            <button
-              onClick={() => setFilterLevel(3)}
-              className={cn("px-3 py-1 rounded-lg transition-all", filterLevel === 3 ? "bg-white text-emerald-700 shadow-xs" : "text-slate-500")}
-            >
-              سطح ۳
-            </button>
-          </div>
-        </div>
-
-        <div className="w-full sm:w-64">
+      {/* Filters & Prominent Search Bar */}
+      <div className="bg-white rounded-2xl p-3.5 border border-slate-200/90 shadow-xs flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+        {/* Prominent Search Input */}
+        <div className="flex-1 min-w-0">
           <div className="relative">
+            <Search size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="جستجوی نام یا نام کاربری..."
-              className="w-full pr-8 pl-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:bg-white focus:border-indigo-500"
+              placeholder="جستجوی کاربر بر اساس نام، نام کاربری، کد ملی، شماره همراه، پایه یا نقش..."
+              className="w-full pr-10 pl-9 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 placeholder:text-slate-400 placeholder:font-medium focus:outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/15 transition-all"
             />
-            <Search size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 rounded-lg transition-colors cursor-pointer"
+                title="پاک کردن جستجو"
+              >
+                <X size={14} />
+              </button>
+            )}
           </div>
+        </div>
+
+        {/* Level Filter & Live Results Count */}
+        <div className="flex items-center justify-between sm:justify-end gap-2.5 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-500 shrink-0">فیلتر سطح:</span>
+            <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setFilterLevel('all')}
+                className={cn("px-3 py-1 rounded-lg transition-all cursor-pointer", filterLevel === 'all' ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-800")}
+              >
+                همه ({users.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterLevel(1)}
+                className={cn("px-3 py-1 rounded-lg transition-all cursor-pointer", filterLevel === 1 ? "bg-white text-indigo-700 shadow-xs" : "text-slate-500 hover:text-slate-800")}
+              >
+                سطح ۱
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterLevel(2)}
+                className={cn("px-3 py-1 rounded-lg transition-all cursor-pointer", filterLevel === 2 ? "bg-white text-amber-700 shadow-xs" : "text-slate-500 hover:text-slate-800")}
+              >
+                سطح ۲
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterLevel(3)}
+                className={cn("px-3 py-1 rounded-lg transition-all cursor-pointer", filterLevel === 3 ? "bg-white text-emerald-700 shadow-xs" : "text-slate-500 hover:text-slate-800")}
+              >
+                سطح ۳
+              </button>
+            </div>
+          </div>
+
+          {(searchTerm || filterLevel !== 'all') && (
+            <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-xl shrink-0">
+              {filteredUsers.length} نتیجه از {users.length}
+            </span>
+          )}
         </div>
       </div>
 
@@ -523,7 +569,30 @@ export default function UserManagementSettings() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredUsers.map((user) => {
+              {filteredUsers.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="py-12 px-4 text-center">
+                    <div className="flex flex-col items-center justify-center gap-2 text-slate-400">
+                      <Search size={28} className="opacity-40" />
+                      <p className="text-xs font-bold text-slate-600">
+                        کاربری مطابق با عبارت «{searchTerm}» یا فیلتر انتخاب‌شده یافت نشد.
+                      </p>
+                      {(searchTerm || filterLevel !== 'all') && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSearchTerm('');
+                            setFilterLevel('all');
+                          }}
+                          className="mt-1 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                        >
+                          پاک کردن جستجو و نمایش همه کاربران
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ) : filteredUsers.map((user) => {
                 const isCurrent = currentUser?.id === user.id || currentUser?.username?.toUpperCase() === user.username?.toUpperCase();
                 
                 // Calculate actual visible and editable count

@@ -19,11 +19,23 @@ import {
   Unlock, 
   Sparkles,
   AlertCircle,
-  HelpCircle
+  HelpCircle,
+  X
 } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { cn, normalizeDigits } from '../../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import AccountSecurityPinModal from '../auth/AccountSecurityPinModal';
+
+function normalizeSearchText(value?: string | null): string {
+  if (!value) return '';
+  return normalizeDigits(String(value))
+    .replace(/ي/g, 'ی')
+    .replace(/ى/g, 'ی')
+    .replace(/ك/g, 'ک')
+    .replace(/\u200c/g, ' ')
+    .trim()
+    .toLowerCase();
+}
 
 export default function UserCredentialsSettings() {
   const { users, currentUser, addUser, updateUser, deleteUser, adminResetPassword } = useAuth();
@@ -32,6 +44,7 @@ export default function UserCredentialsSettings() {
   const [loadingStudents, setLoadingStudents] = useState(true);
   
   const [searchTerm, setSearchTerm] = useState('');
+  const [withoutAccountSearch, setWithoutAccountSearch] = useState('');
   const [selectedLevel, setSelectedLevel] = useState<number | 'all'>('all');
   const [showPasswordMap, setShowPasswordMap] = useState<Record<string, boolean>>({});
 
@@ -115,6 +128,13 @@ export default function UserCredentialsSettings() {
 
   // List of students who DO NOT have user account
   const studentsWithoutAccount = students.filter(s => !getStudentUser(s.id));
+  const filteredStudentsWithoutAccount = studentsWithoutAccount.filter(s => {
+    const term = normalizeSearchText(withoutAccountSearch);
+    if (!term) return true;
+    return [s.name, s.nationalId, s.phoneNumber, s.grade, s.studentCode].some(field =>
+      normalizeSearchText(field).includes(term)
+    );
+  });
 
   // Quick Account Creation logic
   const handleQuickCreateAccount = async (student: Student) => {
@@ -310,9 +330,11 @@ export default function UserCredentialsSettings() {
   // Filtered Users
   const filteredUsers = users.filter(u => {
     if (selectedLevel !== 'all' && u.level !== selectedLevel) return false;
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      return u.name.toLowerCase().includes(term) || u.username.toLowerCase().includes(term) || u.roleTitle.toLowerCase().includes(term);
+    const term = normalizeSearchText(searchTerm);
+    if (term) {
+      return [u.name, u.fullName, u.username, u.roleTitle, u.nationalId, u.phone, u.gradeLabel].some(field =>
+        normalizeSearchText(field).includes(term)
+      );
     }
     return true;
   });
@@ -399,14 +421,24 @@ export default function UserCredentialsSettings() {
 
             {/* Search Input */}
             <div className="relative">
-              <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
               <input
                 type="text"
-                placeholder="جستجو بر اساس نام، نام کاربری یا نقش..."
+                placeholder="جستجو بر اساس نام، نام کاربری، کد ملی، شماره همراه یا نقش..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pr-9 pl-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-indigo-500 outline-none focus:bg-white"
+                className="w-full pr-9 pl-9 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 placeholder:font-medium focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none focus:bg-white transition-all"
               />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute left-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 rounded-lg transition-colors cursor-pointer"
+                  title="پاک کردن جستجو"
+                >
+                  <X size={14} />
+                </button>
+              )}
             </div>
 
             {/* Users list table */}
@@ -525,6 +557,29 @@ export default function UserCredentialsSettings() {
               </p>
             </div>
 
+            {studentsWithoutAccount.length > 0 && (
+              <div className="relative">
+                <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
+                <input
+                  type="text"
+                  value={withoutAccountSearch}
+                  onChange={(e) => setWithoutAccountSearch(e.target.value)}
+                  placeholder="جستجو در طلاب بدون حساب (نام، کد ملی، موبایل)..."
+                  className="w-full pr-8 pl-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 placeholder:font-medium focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none focus:bg-white transition-all"
+                />
+                {withoutAccountSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setWithoutAccountSearch('')}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-700 rounded-md cursor-pointer"
+                    title="پاک کردن جستجو"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+            )}
+
             {loadingStudents && students.length === 0 ? (
               <div className="text-center py-6 text-xs text-slate-400">در حال بارگذاری طلاب...</div>
             ) : studentsWithoutAccount.length === 0 ? (
@@ -532,9 +587,20 @@ export default function UserCredentialsSettings() {
                 <Check size={16} />
                 <span>همه طلاب دارای حساب کاربری هستند!</span>
               </div>
+            ) : filteredStudentsWithoutAccount.length === 0 ? (
+              <div className="text-center py-6 bg-slate-50 text-slate-500 rounded-2xl border border-slate-200 text-xs font-bold space-y-1.5">
+                <p>طلبه‌ای با عبارت «{withoutAccountSearch}» یافت نشد.</p>
+                <button
+                  type="button"
+                  onClick={() => setWithoutAccountSearch('')}
+                  className="text-indigo-600 hover:underline cursor-pointer text-[11px]"
+                >
+                  پاک کردن جستجو
+                </button>
+              </div>
             ) : (
               <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1 custom-scrollbar">
-                {studentsWithoutAccount.map(student => {
+                {filteredStudentsWithoutAccount.map(student => {
                   const hasProps = !!student.nationalId && !!student.phoneNumber;
 
                   return (
