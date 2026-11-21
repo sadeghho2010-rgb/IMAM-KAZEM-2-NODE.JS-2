@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
-  Users,
   Lock,
   RefreshCw,
   X,
@@ -19,26 +18,7 @@ import { localDb } from '../../lib/localDb';
 import { useAuth } from '../../context/AuthContext';
 import { cn } from '../../lib/utils';
 import { dispatchDatabaseToast } from '../../lib/databaseToast';
-
-function canManageAnnouncements(user: any): boolean {
-  if (!user) return false;
-  if (user.isReadOnly === true || user.canEdit === false) return false;
-  const uName = String(user.username || '').toUpperCase().trim();
-  const role = String(user.role || '').trim();
-  const level = Number(user.level) || 0;
-  if (role === 'school_manager' || role === 'manager_principal' || uName === 'RAHNAMA') {
-    return false;
-  }
-  return (
-    role === 'super_admin' ||
-    uName === 'SADEGH' ||
-    (level === 1 && role !== 'school_manager') ||
-    role === 'education_manager' ||
-    role === 'education_officer' ||
-    uName === 'SHAH' ||
-    uName === 'SHAHPOORI'
-  );
-}
+import { canUserManageAnnouncements } from '../../lib/autoAnnouncementHelper';
 
 const AUDIENCE_LABELS: Record<AnnouncementAudience, string> = {
   all: 'همه کاربران سامانه',
@@ -55,7 +35,7 @@ const PRIORITY_LABELS: Record<AnnouncementPriority, string> = {
 
 export default function AnnouncementsManagement() {
   const { currentUser } = useAuth();
-  const canEdit = canManageAnnouncements(currentUser);
+  const canEdit = canUserManageAnnouncements(currentUser);
 
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -148,6 +128,10 @@ export default function AnnouncementsManagement() {
         targetAudience,
         priority,
         isActive,
+        autoSourceType: existing?.autoSourceType,
+        sourcePeriodId: existing?.sourcePeriodId,
+        isCustomized: existing?.autoSourceType ? true : existing?.isCustomized,
+        manuallyDeactivated: !isActive,
         createdAt: existing?.createdAt || nowIso,
         createdBy: existing?.createdBy || String(currentUser?.username || currentUser?.id || 'admin'),
         createdByName: existing?.createdByName || String(currentUser?.name || currentUser?.fullName || 'مسئول آموزش'),
@@ -159,6 +143,7 @@ export default function AnnouncementsManagement() {
       if (!saved) {
         throw new Error('ذخیره اطلاعیه در پایگاه داده تایید نشد.');
       }
+      await localDb.flushSyncQueue();
 
       // Read-After-Write verification
       const freshDocs = await localDb.getDocs<Announcement>('announcements');
@@ -200,11 +185,13 @@ export default function AnnouncementsManagement() {
       const updated: Announcement = {
         ...item,
         isActive: nextActive,
+        manuallyDeactivated: !nextActive,
         updated_at: nowIso,
         version: nextVersion
       };
 
       await localDb.setDoc('announcements', updated);
+      await localDb.flushSyncQueue();
       const freshDocs = await localDb.getDocs<Announcement>('announcements');
       const sorted = (freshDocs || []).slice().sort((a, b) => {
         return new Date(b.createdAt || b.updated_at || 0).getTime() - new Date(a.createdAt || a.updated_at || 0).getTime();
@@ -240,6 +227,7 @@ export default function AnnouncementsManagement() {
 
     try {
       await localDb.deleteDoc('announcements', targetId);
+      await localDb.flushSyncQueue();
       const freshDocs = await localDb.getDocs<Announcement>('announcements');
       const sorted = (freshDocs || []).slice().sort((a, b) => {
         return new Date(b.createdAt || b.updated_at || 0).getTime() - new Date(a.createdAt || a.updated_at || 0).getTime();
@@ -490,33 +478,28 @@ export default function AnnouncementsManagement() {
                   >
                     <div className="flex items-start justify-between gap-2 flex-wrap">
                       <div className="space-y-1 min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h4 className="text-sm font-black text-slate-900">{item.title}</h4>
-                          <span
-                            className={cn(
-                              'px-2 py-0.5 rounded-md text-[10px] font-black border',
-                              item.priority === 'urgent'
-                                ? 'bg-rose-50 text-rose-800 border-rose-200'
-                                : item.priority === 'important'
-                                ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                : 'bg-slate-100 text-slate-700 border-slate-200'
-                            )}
-                          >
-                            {PRIORITY_LABELS[item.priority || 'normal']}
-                          </span>
-                          <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-800 border border-indigo-100 text-[10px] font-bold flex items-center gap-1">
-                            <Users size={11} />
-                            <span>{AUDIENCE_LABELS[item.targetAudience || 'all']}</span>
-                          </span>
+                        <h4 className="text-sm font-black text-slate-900">{item.title}</h4>
+                        <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-slate-500 font-medium">
+                          <span>{PRIORITY_LABELS[item.priority || 'normal']}</span>
+                          <span aria-hidden="true">·</span>
+                          <span>{AUDIENCE_LABELS[item.targetAudience || 'all']}</span>
+                          {item.autoSourceType && (
+                            <>
+                              <span aria-hidden="true">·</span>
+                              <span className="text-indigo-700 font-bold">
+                                {item.autoSourceType === 'study_period'
+                                  ? 'خودکار (دوره مطالعه)'
+                                  : 'خودکار (رزرو نهار و شام)'}
+                              </span>
+                            </>
+                          )}
                         </div>
                       </div>
 
                       <span
                         className={cn(
-                          'px-2.5 py-0.5 rounded-full text-[10px] font-black border shrink-0',
-                          active
-                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                            : 'bg-slate-100 text-slate-600 border-slate-200'
+                          'text-[11px] font-black shrink-0',
+                          active ? 'text-emerald-700' : 'text-slate-500'
                         )}
                       >
                         {active ? 'فعال' : 'غیرفعال'}

@@ -456,10 +456,14 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
         updatedAt: nowIso
       } as any);
       await localDb.flushSyncQueue();
+      await localDb.syncCollectionFromCloud('announcements', true).catch((syncErr: any) => {
+        console.error('[STORAGE_FAILURE][StudyStats.announcementsSync]', syncErr?.message || syncErr);
+      });
 
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'study_periods' } }));
         window.dispatchEvent(new CustomEvent('collection_change_study_periods'));
+        window.dispatchEvent(new CustomEvent('collection_change_announcements'));
         try {
           localStorage.setItem('study_periods_updated_at', String(Date.now()));
           localStorage.setItem('study_logs_updated_at', String(Date.now()));
@@ -556,6 +560,9 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
       }
 
       await localDb.flushSyncQueue();
+      await localDb.syncCollectionFromCloud('announcements', true).catch((syncErr: any) => {
+        console.error('[STORAGE_FAILURE][StudyStats.announcementsSyncDelete]', syncErr?.message || syncErr);
+      });
 
       // Immediately filter out from local component state
       setPeriods(prev => prev.filter(p => p.id !== targetPeriodId));
@@ -565,6 +572,7 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
         window.dispatchEvent(new CustomEvent('collection_change_study_periods'));
         window.dispatchEvent(new CustomEvent('collection_change_periodic_study_logs'));
         window.dispatchEvent(new CustomEvent('collection_change_study_daily_entries'));
+        window.dispatchEvent(new CustomEvent('collection_change_announcements'));
         try {
           localStorage.setItem('study_periods_updated_at', String(Date.now()));
           localStorage.setItem('study_logs_updated_at', String(Date.now()));

@@ -3,6 +3,11 @@ import { verifyAccessToken, logServerAudit, StoredUser, fetchAllUsersFromStorage
 import { isMysqlConfigured, MysqlRepository } from './databaseAbstraction';
 import { logAudit } from './auditLogger';
 import { normalizeShamsiDateStr, getConsolidatedSessionLog, toEnglishDigits } from './jalali';
+import {
+  computePeriodAutoAnnouncementUpdate,
+  getMealPeriodAnnouncementId,
+  getStudyPeriodAnnouncementId
+} from './autoAnnouncementHelper';
 
 // Real-time synchronization event bus & change log buffer
 export interface ServerChangeEvent {
@@ -642,6 +647,62 @@ async function syncStudentToUserAccount(studentRecord: any) {
   }
 }
 
+// Helper: Automatically synchronize announcements when Study Periods or Meal Reservation Periods open/close/delete
+const MEAL_PERIOD_COLLECTIONS = new Set([
+  'finance_meal_periods',
+  'meal_periods',
+  'lunch_periods',
+  'meal_reservation_periods'
+]);
+
+async function syncPeriodAutoAnnouncementOnServer(
+  collection: string,
+  periodDoc: any | null,
+  previousPeriodDoc: any | null,
+  callerUser?: any
+): Promise<void> {
+  const isStudy = collection === 'study_periods';
+  const isMeal = MEAL_PERIOD_COLLECTIONS.has(collection);
+  if (!isStudy && !isMeal) return;
+
+  const periodId = String(periodDoc?.id || previousPeriodDoc?.id || '').trim();
+  if (!periodId) return;
+
+  const kind: 'study_period' | 'meal_period' = isStudy ? 'study_period' : 'meal_period';
+  const annId = isStudy ? getStudyPeriodAnnouncementId(periodId) : getMealPeriodAnnouncementId(periodId);
+
+  try {
+    let existingAnnouncement: any = null;
+    try {
+      existingAnnouncement = await MysqlRepository.getDocument('announcements', annId);
+    } catch (readErr: any) {
+      console.warn(`[STORAGE_FAILURE][autoAnnouncement.read] ID "${annId}":`, readErr?.message || readErr);
+    }
+
+    const decision = computePeriodAutoAnnouncementUpdate({
+      kind,
+      period: periodDoc,
+      previousPeriod: previousPeriodDoc,
+      existingAnnouncement,
+      actorUser: callerUser
+    });
+
+    if (decision.action === 'upsert' && decision.announcement) {
+      await MysqlRepository.saveDocument('announcements', decision.id, decision.announcement);
+      invalidateCollectionCache('announcements');
+      notifyRealtimeChange('announcements', decision.id, 'upsert');
+      console.log(`[STORAGE_SUCCESS][autoAnnouncement.upsert] Period "${collection}/${periodId}" -> Announcement "${decision.id}" (active=${decision.announcement.isActive}, v${decision.announcement.version})`);
+    } else if (decision.action === 'delete') {
+      await MysqlRepository.deleteDocument('announcements', decision.id);
+      invalidateCollectionCache('announcements');
+      notifyRealtimeChange('announcements', decision.id, 'delete');
+      console.log(`[STORAGE_SUCCESS][autoAnnouncement.delete] Period "${collection}/${periodId}" -> Deleted "${decision.id}"`);
+    }
+  } catch (err: any) {
+    console.error(`[STORAGE_FAILURE][autoAnnouncement.sync] Collection "${collection}", ID "${periodId}":`, err?.message || err);
+  }
+}
+
 // Server CRUD Handler: Save Document (Dedicated Table + App Collections Mirror)
 export async function serverSaveDoc(
   collection: string,
@@ -806,6 +867,9 @@ export async function serverSaveDoc(
 
       console.log(`[MySQL Fast Save Success] Collection: "${collection}", ID: "${id}", AffectedRows: ${affectedRows}`);
 
+      // Synchronize automatic announcements when study or meal periods are opened/closed/deleted
+      await syncPeriodAutoAnnouncementOnServer(collection, finalRecord, existingDocForAudit, callerUser);
+
       if (collection !== 'audit_logs') {
         const isUpdate = Boolean(existingDocForAudit);
         const entityLabel =
@@ -936,6 +1000,9 @@ export async function serverDeleteDoc(collection: string, id: string, callerUser
 
       // Invalidate L1 collection cache immediately
       invalidateCollectionCache(collection);
+
+      // Clean up linked auto-announcement if a study or meal period is deleted
+      await syncPeriodAutoAnnouncementOnServer(collection, null, existingRecord || { id }, callerUser);
 
       if (collection !== 'audit_logs') {
         const entityLabel =

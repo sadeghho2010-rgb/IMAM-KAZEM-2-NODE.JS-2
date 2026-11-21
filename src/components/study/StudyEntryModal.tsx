@@ -719,6 +719,14 @@ export default function StudyEntryModal({
       // Process student study logs and workflow warnings asynchronously in background
       (async () => {
         try {
+          await localDb.flushSyncQueue();
+          await localDb.syncCollectionFromCloud('announcements', true).catch((syncErr: any) => {
+            console.error('[STORAGE_FAILURE][StudyEntryModal.announcementsSync]', syncErr?.message || syncErr);
+          });
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('collection_change_announcements'));
+          }
+
           const existingPeriodLogs = allLogs.filter(l => l.periodId === effectivePeriodId);
           const logPromises: Promise<any>[] = [];
 
@@ -829,12 +837,16 @@ export default function StudyEntryModal({
           }
 
           await localDb.flushSyncQueue();
+          await localDb.syncCollectionFromCloud('announcements', true).catch((syncErr: any) => {
+            console.error('[STORAGE_FAILURE][StudyEntryModal.announcementsSyncEnd]', syncErr?.message || syncErr);
+          });
 
           if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('workflow_items_updated'));
             window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'study_periods' } }));
             window.dispatchEvent(new CustomEvent('collection_change_study_periods'));
             window.dispatchEvent(new CustomEvent('collection_change_periodic_study_logs'));
+            window.dispatchEvent(new CustomEvent('collection_change_announcements'));
             try {
               localStorage.setItem('study_periods_updated_at', String(Date.now()));
               localStorage.setItem('study_logs_updated_at', String(Date.now()));

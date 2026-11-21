@@ -590,8 +590,13 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
       await localDb.setDoc('finance_meal_periods', period.id, updated);
       setPeriods(prev => prev.map(p => p.id === period.id ? updated : p));
       showToast(newStatus ? 'امکان ثبت رزرو برای طلاب با موفقیت بسته شد.' : 'امکان ثبت رزرو برای طلاب مجدداً باز گردید.');
-    } catch (err) {
-      console.error('Error updating period status:', err);
+      await localDb.flushSyncQueue();
+      await localDb.syncCollectionFromCloud('announcements', true).catch((syncErr: any) => {
+        console.error('[STORAGE_FAILURE][LunchManagement.announcementsSyncToggle]', syncErr?.message || syncErr);
+      });
+      window.dispatchEvent(new CustomEvent('collection_change_announcements'));
+    } catch (err: any) {
+      console.error('[STORAGE_FAILURE][LunchManagement.togglePeriod]', err?.message || err);
       showToast('خطا در تغییر وضعیت دوره.');
     }
   };
@@ -666,8 +671,13 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
       }
       setIsPeriodModalOpen(false);
       showToast('دوره رزرو نهار و شام با موفقیت ذخیره شد.');
-    } catch (err) {
-      console.error('Error saving period:', err);
+      await localDb.flushSyncQueue();
+      await localDb.syncCollectionFromCloud('announcements', true).catch((syncErr: any) => {
+        console.error('[STORAGE_FAILURE][LunchManagement.announcementsSyncSave]', syncErr?.message || syncErr);
+      });
+      window.dispatchEvent(new CustomEvent('collection_change_announcements'));
+    } catch (err: any) {
+      console.error('[STORAGE_FAILURE][LunchManagement.savePeriod]', err?.message || err);
       showToast('خطا در ذخیره دوره رزرو.');
     }
   };
@@ -683,8 +693,13 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
         setActivePeriodId(remainingPeriods[0].id);
       }
       showToast('دوره با موفقیت حذف گردید.');
-    } catch (err) {
-      console.error('Error deleting period:', err);
+      await localDb.flushSyncQueue();
+      await localDb.syncCollectionFromCloud('announcements', true).catch((syncErr: any) => {
+        console.error('[STORAGE_FAILURE][LunchManagement.announcementsSyncDelete]', syncErr?.message || syncErr);
+      });
+      window.dispatchEvent(new CustomEvent('collection_change_announcements'));
+    } catch (err: any) {
+      console.error('[STORAGE_FAILURE][LunchManagement.deletePeriod]', err?.message || err);
       showToast('خطا در حذف دوره.');
     }
   };

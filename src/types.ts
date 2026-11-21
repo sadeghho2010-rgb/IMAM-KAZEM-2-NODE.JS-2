@@ -2372,6 +2372,10 @@ export interface Announcement {
   priority: AnnouncementPriority;
   targetAudience: AnnouncementAudience;
   isActive: boolean;
+  autoSourceType?: 'study_period' | 'meal_period';
+  sourcePeriodId?: string;
+  isCustomized?: boolean;
+  manuallyDeactivated?: boolean;
   createdAt: string;
   createdBy?: string;
   createdByName?: string;
