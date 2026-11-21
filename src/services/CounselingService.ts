@@ -14,8 +14,8 @@ export const CounselingGradeSchema = z.object({
   courseTitle: z.string().min(1, 'عنوان کلاس مشاوره الزامی است.'),
   sessionDate: z.string().min(1, 'تاریخ جلسه الزامی است.'),
   sessionNumber: z.union([z.number(), z.string()]).optional(),
-  participationScore: z.enum(['الف', 'ب', 'ج', 'د', 'غیبت']).default('الف'),
-  researchScore: z.enum(['الف', 'ب', 'ج', 'د', 'غیبت']).default('الف'),
+  participationScore: z.enum(['الف', 'ب', 'ج', 'د', 'غیبت', 'عدم انجام تکلیف', '']).optional(),
+  researchScore: z.enum(['الف', 'ب', 'ج', 'د', 'غیبت', 'عدم انجام تکلیف', '']).optional(),
   counselorFeedback: z.string().optional()
 });
 
@@ -62,8 +62,8 @@ export class CounselingService {
       courseTitle: valid.courseTitle.trim(),
       sessionDate: valid.sessionDate,
       sessionNumber: valid.sessionNumber,
-      participationScore: valid.participationScore as CounselingScore,
-      researchScore: valid.researchScore as CounselingScore,
+      participationScore: (valid.participationScore || undefined) as CounselingScore | undefined,
+      researchScore: (valid.researchScore || undefined) as CounselingScore | undefined,
       counselorFeedback: valid.counselorFeedback,
       createdAt: (rawData as any)?.createdAt || nowIso,
       createdByName: callerUser?.username || 'استاد مشاور',
@@ -80,7 +80,7 @@ export class CounselingService {
       action: valid.id ? 'UPDATE_COUNSELING_GRADE' : 'CREATE_COUNSELING_GRADE',
       entityType: 'counseling_grade',
       entityId: id,
-      description: `ثبت نمره مشاوره برای طلبه ${record.studentName} در درس ${record.courseTitle} (مشارکت: ${record.participationScore}، پژوهش: ${record.researchScore})`
+      description: `ثبت نمره مشاوره برای طلبه ${record.studentName} در درس ${record.courseTitle} (مشارکت: ${record.participationScore || 'ثبت‌نشده'}، پژوهش: ${record.researchScore || 'ثبت‌نشده'})`
     });
 
     return record;

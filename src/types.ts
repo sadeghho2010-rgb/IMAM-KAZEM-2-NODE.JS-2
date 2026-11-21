@@ -1430,7 +1430,7 @@ export interface StudentLocker {
   updatedAt: string;
 }
 
-export type CounselingScore = 'الف' | 'ب' | 'ج' | 'د' | 'غیبت';
+export type CounselingScore = 'الف' | 'ب' | 'ج' | 'د' | 'غیبت' | 'عدم انجام تکلیف';
 
 export interface CourseSelectionPeriod {
   id: string;
@@ -1493,8 +1493,8 @@ export interface CounselingSessionGrade {
   programId?: string; // شناسه برنامه/کلاس مشاوره مرتبط
   sessionDate: string; // تاریخ جلسه (شمسی)
   sessionNumber?: number | string; // شماره یا عنوان جلسه
-  participationScore: CounselingScore; // نمره مشارکت
-  researchScore: CounselingScore; // نمره پژوهش و تقریر
+  participationScore?: CounselingScore | ''; // نمره مشارکت
+  researchScore?: CounselingScore | ''; // نمره پژوهش و تقریر
   counselorFeedback?: string; // نظرات و ملاحظات استاد مشاور
   version?: number;
   createdAt: string;

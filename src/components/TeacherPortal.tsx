@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { 
   GraduationCap, 
   Calendar, 
@@ -104,7 +104,8 @@ export default function TeacherPortal() {
   const [selectedCourseId, setSelectedCourseId] = useState<string>('');
   const [selectedSessionDate, setSelectedSessionDate] = useState<string>('');
   const [teacherNotesMap, setTeacherNotesMap] = useState<Record<string, string>>({});
-  const [localDraftGrades, setLocalDraftGrades] = useState<Record<string, { participationScore?: CounselingScore; researchScore?: CounselingScore; counselorFeedback?: string }>>({});
+  const [localDraftGrades, setLocalDraftGrades] = useState<Record<string, { participationScore?: CounselingScore | ''; researchScore?: CounselingScore | ''; counselorFeedback?: string }>>({});
+  const lastDraftSessionKeyRef = useRef<string>('');
   const [feedbackSavedStudentId, setFeedbackSavedStudentId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -370,29 +371,45 @@ export default function TeacherPortal() {
   // Sync draft state with saved database grades when session date or grades change
   useEffect(() => {
     if (!selectedSessionDate) {
+      lastDraftSessionKeyRef.current = '';
       setLocalDraftGrades({});
       return;
     }
     const normSelected = normalizeShamsiDateStr(selectedSessionDate);
-    const initialMap: Record<string, { participationScore?: CounselingScore; researchScore?: CounselingScore; counselorFeedback?: string }> = {};
+    const sessionKey = `${selectedCourseId || ''}::${normSelected}`;
+    const isSessionChanged = lastDraftSessionKeyRef.current !== sessionKey;
+    lastDraftSessionKeyRef.current = sessionKey;
+
+    const initialMap: Record<string, { participationScore?: CounselingScore | ''; researchScore?: CounselingScore | ''; counselorFeedback?: string }> = {};
     
-    grades.forEach(g => {
+    // Sort newest first so latest saved version wins if duplicates exist
+    const sortedGrades = [...grades].sort((a, b) =>
+      new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime()
+    );
+
+    sortedGrades.forEach(g => {
       if (normalizeShamsiDateStr(g.sessionDate) === normSelected) {
         if (activeCounselingCourse && g.programId && g.programId !== activeCounselingCourse.id && g.courseTitle !== activeCounselingCourse.title) {
           return;
         }
-        initialMap[g.studentId] = {
-          participationScore: g.participationScore,
-          researchScore: g.researchScore,
-          counselorFeedback: g.counselorFeedback || ''
-        };
+        if (!initialMap[g.studentId]) {
+          initialMap[g.studentId] = {
+            participationScore: g.participationScore || '',
+            researchScore: g.researchScore || '',
+            counselorFeedback: g.counselorFeedback || ''
+          };
+        }
       }
     });
 
-    setLocalDraftGrades(prev => ({
-      ...initialMap,
-      ...prev
-    }));
+    if (isSessionChanged) {
+      setLocalDraftGrades(initialMap);
+    } else {
+      setLocalDraftGrades(prev => ({
+        ...initialMap,
+        ...prev
+      }));
+    }
   }, [selectedSessionDate, selectedCourseId, grades, activeCounselingCourse]);
 
   /**
@@ -570,24 +587,28 @@ export default function TeacherPortal() {
     return map;
   }, [grades, activeCounselingCourse, selectedSessionDate]);
 
-  // Grade completion status for each held session date
+  // Grade completion status for each held session date (deduplicated per student & matched to active course)
   const sessionGradingStats = useMemo(() => {
     const stats: Record<string, { gradedCount: number; totalCount: number; isComplete: boolean }> = {};
     const totalCount = enrolledStudents.length;
+    const enrolledIdSet = new Set(enrolledStudents.map(s => s.id));
 
     classSessionDates.forEach(session => {
-      let graded = 0;
+      const gradedStudentIds = new Set<string>();
       const normSessionDate = normalizeShamsiDateStr(session.date);
       grades.forEach(g => {
-        if (normalizeShamsiDateStr(g.sessionDate) === normSessionDate) {
-          if (enrolledStudents.some(s => s.id === g.studentId)) {
-            if (g.participationScore || g.researchScore) {
-              graded++;
-            }
+        if (
+          normalizeShamsiDateStr(g.sessionDate) === normSessionDate &&
+          enrolledIdSet.has(g.studentId) &&
+          (!activeCounselingCourse || g.programId === activeCounselingCourse.id || g.courseTitle === activeCounselingCourse.title || !g.programId)
+        ) {
+          if (g.participationScore || g.researchScore) {
+            gradedStudentIds.add(g.studentId);
           }
         }
       });
 
+      const graded = gradedStudentIds.size;
       stats[session.date] = {
         gradedCount: graded,
         totalCount,
@@ -596,7 +617,72 @@ export default function TeacherPortal() {
     });
 
     return stats;
-  }, [classSessionDates, enrolledStudents, grades]);
+  }, [classSessionDates, enrolledStudents, grades, activeCounselingCourse]);
+
+  // Quick completion status per counseling class (whether its latest held session has evaluations recorded)
+  const programEvaluationStatus = useMemo(() => {
+    const statusMap: Record<string, boolean> = {};
+    const today = getTodayShamsi();
+    const todayDate = shamsiToDate(today);
+    const pastDate = new Date(todayDate.getTime());
+    pastDate.setDate(pastDate.getDate() - 45);
+    const startDate = dateToShamsi(pastDate);
+    const allDays = generateShamsiDateRange(startDate, today);
+    const isHolidayOnDate = (dateStr: string) =>
+      holidays.some(h => (h.startDate && h.endDate ? dateStr >= h.startDate && dateStr <= h.endDate : (h as any).date === dateStr || h.startDate === dateStr));
+
+    const activeStudents = students.filter(s => s.isActive !== false && (s as any).status !== 'deleted' && !(s as any).isDeleted && !(s as any).deletedAt);
+
+    counselingPrograms.forEach(prog => {
+      const rawDays = getProgramDays(prog);
+      const courseDays = rawDays && rawDays.length > 0
+        ? rawDays
+        : (Array.isArray(prog.days) && prog.days.length > 0)
+          ? prog.days
+          : (prog as any).day
+            ? [(prog as any).day]
+            : ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه'];
+
+      const held = allDays.filter(d => compareShamsi(d, today) <= 0 && courseDays.includes(getShamsiDayOfWeekName(d)) && !isHolidayOnDate(d));
+      const latestDate = held.length > 0 ? held[held.length - 1] : today;
+      const normLatest = normalizeShamsiDateStr(latestDate);
+
+      let progStudentIds: Set<string>;
+      if (prog.studentIds && prog.studentIds.length > 0) {
+        progStudentIds = new Set(prog.studentIds.filter(id => activeStudents.some(s => s.id === id)));
+      } else {
+        const directEnr = enrollments.filter(e => e.programId === prog.id);
+        if (directEnr.length > 0) {
+          progStudentIds = new Set(directEnr.map(e => e.studentId).filter(id => activeStudents.some(s => s.id === id)));
+        } else if (prog.grade && prog.grade !== 'عمومی' && prog.grade !== 'همه') {
+          progStudentIds = new Set(activeStudents.filter(s => isGradeMatch(s.grade, prog.grade)).map(s => s.id));
+        } else {
+          progStudentIds = new Set();
+        }
+      }
+
+      if (progStudentIds.size === 0) {
+        statusMap[prog.id] = false;
+        return;
+      }
+
+      const gradedIds = new Set<string>();
+      grades.forEach(g => {
+        if (
+          normalizeShamsiDateStr(g.sessionDate) === normLatest &&
+          progStudentIds.has(g.studentId) &&
+          (g.programId === prog.id || g.courseTitle === prog.title || !g.programId) &&
+          (g.participationScore || g.researchScore)
+        ) {
+          gradedIds.add(g.studentId);
+        }
+      });
+
+      statusMap[prog.id] = gradedIds.size >= progStudentIds.size;
+    });
+
+    return statusMap;
+  }, [counselingPrograms, holidays, students, enrollments, grades]);
 
   const getSessionRelativeLabel = (session: { date: string; isToday?: boolean }, idx: number) => {
     if (session.isToday) return 'کلاس همان روز (امروز)';
@@ -609,6 +695,7 @@ export default function TeacherPortal() {
 
   /**
    * Separate factor grading handler for Participation and Research/Summary scores.
+   * Clicking an already-selected score toggles it back to empty ('') so teachers can leave it blank.
    * Completely decoupled and kept strictly in local draft state until master save.
    */
   const handleSetStudentFactorScore = (
@@ -620,11 +707,19 @@ export default function TeacherPortal() {
 
     setLocalDraftGrades(prev => {
       const existing = prev[student.id] || {};
+      const saved = sessionGradesMap.get(student.id);
+      const fieldKey = factor === 'participation' ? 'participationScore' : 'researchScore';
+      const currentVal = existing[fieldKey] !== undefined ? existing[fieldKey] : (saved?.[fieldKey] || '');
+      // Normalize legacy research 'غیبت' when toggling 'عدم انجام تکلیف'
+      const isAlreadySelected =
+        currentVal === score ||
+        (factor === 'research' && score === 'عدم انجام تکلیف' && currentVal === 'غیبت');
+
       return {
         ...prev,
         [student.id]: {
           ...existing,
-          [factor === 'participation' ? 'participationScore' : 'researchScore']: score
+          [fieldKey]: isAlreadySelected ? '' : score
         }
       };
     });
@@ -673,8 +768,8 @@ export default function TeacherPortal() {
           (g.programId === activeCounselingCourse.id || g.courseTitle === activeCounselingCourse.title || !g.programId)
         ) || null;
 
-        const partScore = draft?.participationScore !== undefined ? draft.participationScore : existingPrimary?.participationScore;
-        const resScore = draft?.researchScore !== undefined ? draft.researchScore : existingPrimary?.researchScore;
+        const partScore = (draft?.participationScore !== undefined ? draft.participationScore : existingPrimary?.participationScore) || '';
+        const resScore = (draft?.researchScore !== undefined ? draft.researchScore : existingPrimary?.researchScore) || '';
         const pendingNote = teacherNotesMap[student.id];
         const feedback = draft?.counselorFeedback !== undefined 
           ? draft.counselorFeedback 
@@ -700,8 +795,8 @@ export default function TeacherPortal() {
             programId: activeCounselingCourse.id,
             sessionDate: normSelectedDate,
             sessionNumber: sessionLabel,
-            participationScore: partScore || 'الف',
-            researchScore: resScore || 'الف',
+            participationScore: partScore ? (partScore as CounselingScore) : undefined,
+            researchScore: resScore ? (resScore as CounselingScore) : undefined,
             counselorFeedback: feedback.trim() || undefined,
             createdAt: existingPrimary?.createdAt || new Date().toISOString(),
             createdByName: currentUser?.name || teacherName,
@@ -730,11 +825,11 @@ export default function TeacherPortal() {
         ]);
 
         // Directly merge newly saved updates into localDraftGrades so UI immediately holds the new scores and never reverts!
-        const newDrafts: Record<string, { participationScore?: CounselingScore; researchScore?: CounselingScore; counselorFeedback?: string }> = {};
+        const newDrafts: Record<string, { participationScore?: CounselingScore | ''; researchScore?: CounselingScore | ''; counselorFeedback?: string }> = {};
         updates.forEach(u => {
           newDrafts[u.studentId] = {
-            participationScore: u.participationScore,
-            researchScore: u.researchScore,
+            participationScore: u.participationScore || '',
+            researchScore: u.researchScore || '',
             counselorFeedback: u.counselorFeedback || ''
           };
         });
@@ -848,18 +943,6 @@ export default function TeacherPortal() {
                   سامانه مدیریت و ارزیابی اساتید پایه
                 </span>
               </div>
-              <div className="flex items-center gap-2 mt-1 text-xs text-slate-300 font-medium">
-                {currentTeacherObj?.teacherCode && (
-                  <span className="font-mono font-bold bg-white/10 px-2 py-0.5 rounded text-amber-200 border border-white/10">
-                    کد استاد: {currentTeacherObj.teacherCode}
-                  </span>
-                )}
-                {currentTeacherObj?.phoneNumber && (
-                  <span className="font-mono opacity-80">
-                    همراه: {currentTeacherObj.phoneNumber}
-                  </span>
-                )}
-              </div>
             </div>
           </div>
 
@@ -872,10 +955,10 @@ export default function TeacherPortal() {
               onClick={() => syncPortalData(true)}
               disabled={isSyncing || loadingState === 'loading'}
               className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-xs font-bold disabled:opacity-50 border border-white/10 backdrop-blur-md"
-              title="همگام‌سازی و بروزرسانی برنامه از سرور"
+              title="دریافت و بروزرسانی اطلاعات کلاس از سرور"
             >
               <RotateCw size={16} className={cn("transition-transform", isSyncing && "animate-spin text-amber-400")} />
-              <span>همگام‌سازی اطلاعات</span>
+              <span>دریافت اطلاعات کلاس</span>
             </button>
 
             {/* Logout Button */}
@@ -1090,6 +1173,7 @@ export default function TeacherPortal() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {counselingPrograms.map(prog => {
                         const isSelected = selectedCourseId === prog.id;
+                        const isClassEvaluated = Boolean(programEvaluationStatus[prog.id]);
                         
                         return (
                           <button
@@ -1115,12 +1199,38 @@ export default function TeacherPortal() {
                                 {prog.grade || 'پایه عمومی'} {prog.time ? `• ${prog.time}` : ''}
                               </div>
                             </div>
-                            <span className={cn(
-                              "text-[10px] font-bold px-2 py-0.5 rounded-lg shrink-0",
-                              isSelected ? "bg-white/20 text-white" : "bg-white border border-slate-200 text-slate-600"
-                            )}>
-                              {isSelected ? 'کلاس انتخابی' : 'انتخاب'}
-                            </span>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {isClassEvaluated ? (
+                                <span
+                                  className={cn(
+                                    "inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded-lg",
+                                    isSelected
+                                      ? "bg-white/20 text-white"
+                                      : "bg-emerald-50 border border-emerald-200 text-emerald-700"
+                                  )}
+                                >
+                                  <span className="relative flex h-2.5 w-2.5 shrink-0">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                                  </span>
+                                  <span>ارزیابی ثبت شده</span>
+                                </span>
+                              ) : (
+                                <span
+                                  className="relative flex h-3 w-3 shrink-0"
+                                  title="ارزیابی آخرین جلسه این کلاس هنوز تکمیل نشده است"
+                                >
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-80" />
+                                  <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500 shadow-sm shadow-rose-500/40" />
+                                </span>
+                              )}
+                              <span className={cn(
+                                "text-[10px] font-bold px-2 py-0.5 rounded-lg shrink-0",
+                                isSelected ? "bg-white/20 text-white" : "bg-white border border-slate-200 text-slate-600"
+                              )}>
+                                {isSelected ? 'کلاس انتخابی' : 'انتخاب'}
+                              </span>
+                            </div>
                           </button>
                         );
                       })}
@@ -1186,7 +1296,7 @@ export default function TeacherPortal() {
                                   ? "bg-emerald-600 text-white border-emerald-700 shadow-md scale-102 ring-2 ring-emerald-300 font-black"
                                   : stats.isComplete
                                     ? "bg-white border-emerald-300 text-slate-800 hover:bg-emerald-50/70"
-                                    : "bg-white border-amber-300 text-slate-800 hover:bg-amber-50/70 ring-1 ring-amber-200/80"
+                                    : "bg-white border-rose-200/90 text-slate-800 hover:bg-rose-50/50"
                               )}
                             >
                               <div className="flex items-center justify-between gap-1 mb-1.5">
@@ -1201,27 +1311,66 @@ export default function TeacherPortal() {
                                   {relLabel}
                                 </span>
                                 {stats.isComplete ? (
-                                  <CheckCircle2 size={15} className={isSelected ? "text-emerald-200" : "text-emerald-600"} />
+                                  <span
+                                    className="relative flex h-2.5 w-2.5 shrink-0"
+                                    title="ارزیابی این جلسه ثبت شده است"
+                                  >
+                                    <span className={cn(
+                                      "animate-ping absolute inline-flex h-full w-full rounded-full opacity-75",
+                                      isSelected ? "bg-emerald-200" : "bg-emerald-400"
+                                    )} />
+                                    <span className={cn(
+                                      "relative inline-flex rounded-full h-2.5 w-2.5",
+                                      isSelected ? "bg-emerald-200" : "bg-emerald-500"
+                                    )} />
+                                  </span>
                                 ) : (
-                                  <AlertCircle size={15} className={isSelected ? "text-amber-200" : "text-amber-600 animate-pulse"} />
+                                  <span
+                                    className="relative flex h-3 w-3 shrink-0"
+                                    title={`ارزیابی این جلسه تکمیل نشده است (${toPersianDigits(Math.max(0, stats.totalCount - stats.gradedCount))} طلبه باقی‌مانده)`}
+                                  >
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-80" />
+                                    <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500 shadow-sm shadow-rose-500/40" />
+                                  </span>
                                 )}
                               </div>
-                              <div className="font-mono text-xs font-black">{session.date}</div>
+                              <div className="font-mono text-xs font-black tabular-nums">{session.date}</div>
                               <div className="text-[10px] opacity-80 mt-0.5">
                                 {session.weekday} (جلسه {toPersianDigits(session.sessionNumber)})
                               </div>
                               <div className={cn(
-                                "text-[10px] mt-2 font-black pt-1 border-t",
+                                "text-[10px] mt-2 font-black pt-1.5 border-t flex items-center justify-between gap-1.5",
                                 isSelected 
                                   ? "border-white/20 text-emerald-100" 
                                   : stats.isComplete 
                                     ? "border-emerald-100 text-emerald-700" 
-                                    : "border-amber-100 text-amber-700"
+                                    : "border-rose-100 text-slate-500"
                               )}>
-                                {stats.isComplete 
-                                  ? `✓ ثبت شده (${toPersianDigits(stats.gradedCount)} طلبه)`
-                                  : `⚠️ نیاز به نمره (${toPersianDigits(stats.totalCount - stats.gradedCount)} مانده)`
-                                }
+                                {stats.isComplete ? (
+                                  <span className="inline-flex items-center gap-1.5">
+                                    <span className="relative flex h-2 w-2 shrink-0">
+                                      <span className={cn(
+                                        "animate-ping absolute inline-flex h-full w-full rounded-full opacity-75",
+                                        isSelected ? "bg-emerald-200" : "bg-emerald-400"
+                                      )} />
+                                      <span className={cn(
+                                        "relative inline-flex rounded-full h-2 w-2",
+                                        isSelected ? "bg-emerald-200" : "bg-emerald-500"
+                                      )} />
+                                    </span>
+                                    <span>ارزیابی ثبت شده</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1.5" title="تکمیل نشده">
+                                    <span className="relative flex h-2.5 w-2.5 shrink-0">
+                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-80" />
+                                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500" />
+                                    </span>
+                                    <span className={cn("tabular-nums font-bold", isSelected ? "text-white/90" : "text-slate-500")}>
+                                      {toPersianDigits(stats.gradedCount)} از {toPersianDigits(stats.totalCount)}
+                                    </span>
+                                  </span>
+                                )}
                               </div>
                             </button>
                           );
@@ -1346,27 +1495,33 @@ export default function TeacherPortal() {
                                 <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block"></span>
                                 <span>نمره پژوهش و تقریر:</span>
                               </span>
+                              {!resScore && (
+                                <span className="text-[10px] text-slate-400 font-medium">اختیاری (در صورت عدم انتخاب خالی می‌ماند)</span>
+                              )}
                             </div>
                             <div className="grid grid-cols-5 gap-1.5">
                               {[
-                                { key: 'الف', label: 'عالی', idle: 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200', active: 'bg-emerald-600 text-white border-emerald-700 shadow-md ring-2 ring-emerald-300' },
-                                { key: 'ب', label: 'خوب', idle: 'bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-200', active: 'bg-blue-600 text-white border-blue-700 shadow-md ring-2 ring-blue-300' },
-                                { key: 'ج', label: 'متوسط', idle: 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200', active: 'bg-amber-500 text-white border-amber-600 shadow-md ring-2 ring-amber-300' },
-                                { key: 'د', label: 'ضعیف', idle: 'bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-200', active: 'bg-rose-600 text-white border-rose-700 shadow-md ring-2 ring-rose-300' },
-                                { key: 'غیبت', label: 'عدم‌حضور', idle: 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200', active: 'bg-slate-700 text-white border-slate-800 shadow-md ring-2 ring-slate-400' }
+                                { key: 'الف', shortTitle: 'الف', label: 'عالی', idle: 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200', active: 'bg-emerald-600 text-white border-emerald-700 shadow-md ring-2 ring-emerald-300' },
+                                { key: 'ب', shortTitle: 'ب', label: 'خوب', idle: 'bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-200', active: 'bg-blue-600 text-white border-blue-700 shadow-md ring-2 ring-blue-300' },
+                                { key: 'ج', shortTitle: 'ج', label: 'متوسط', idle: 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200', active: 'bg-amber-500 text-white border-amber-600 shadow-md ring-2 ring-amber-300' },
+                                { key: 'د', shortTitle: 'د', label: 'ضعیف', idle: 'bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-200', active: 'bg-rose-600 text-white border-rose-700 shadow-md ring-2 ring-rose-300' },
+                                { key: 'عدم انجام تکلیف', shortTitle: 'عدم انجام', label: 'تکلیف', idle: 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200', active: 'bg-slate-700 text-white border-slate-800 shadow-md ring-2 ring-slate-400' }
                               ].map(item => {
-                                const isSelected = resScore === item.key;
+                                const isSelected =
+                                  resScore === item.key ||
+                                  (item.key === 'عدم انجام تکلیف' && resScore === 'غیبت');
                                 return (
                                   <button
                                     key={`res-${item.key}`}
                                     type="button"
                                     onClick={() => handleSetStudentFactorScore(student, 'research', item.key as CounselingScore)}
+                                    title={item.key === 'عدم انجام تکلیف' ? 'عدم انجام تکلیف' : `${item.key} (${item.label})`}
                                     className={cn(
-                                      "py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex flex-col items-center justify-center border active:scale-95",
+                                      "py-2 px-1 rounded-xl text-xs font-black transition-all cursor-pointer flex flex-col items-center justify-center border active:scale-95 text-center leading-tight",
                                       isSelected ? item.active : item.idle
                                     )}
                                   >
-                                    <span className="text-xs">{item.key}</span>
+                                    <span className={item.key === 'عدم انجام تکلیف' ? 'text-[10px]' : 'text-xs'}>{item.shortTitle}</span>
                                     <span className="text-[9px] opacity-80">{item.label}</span>
                                   </button>
                                 );

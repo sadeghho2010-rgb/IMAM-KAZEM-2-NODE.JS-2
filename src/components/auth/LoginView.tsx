@@ -277,68 +277,134 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
     <div
       id="login-page-root"
       dir="rtl"
-      className="relative min-h-screen w-full flex items-center justify-center p-4 sm:p-6 overflow-hidden font-vazir bg-slate-950 select-none"
+      className="relative min-h-screen w-full flex items-center justify-center p-4 sm:p-6 overflow-hidden font-vazir bg-[#050b19] select-none"
     >
-      {/* 1. Atmospheric ambient lighting effects */}
+      {/* 1. Architectural Seminary Backdrop: Midnight Sapphire Depth + Geometric Star Lattice + Warm Zenith Glow */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[550px] h-[550px] bg-blue-600/15 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-1/4 left-1/2 -translate-x-1/2 w-[550px] h-[550px] bg-indigo-600/15 rounded-full blur-3xl pointer-events-none" />
+        {/* Base atmospheric radial gradient */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              'radial-gradient(ellipse 80% 55% at 50% 18%, rgba(217, 169, 86, 0.14) 0%, rgba(15, 36, 77, 0.45) 45%, rgba(5, 11, 25, 0.98) 100%)'
+          }}
+        />
+
+        {/* Delicate Islamic 8-point geometric architectural lattice */}
+        <svg
+          className="absolute inset-0 w-full h-full opacity-[0.06]"
+          xmlns="http://www.w3.org/2000/svg"
+          aria-hidden="true"
+        >
+          <defs>
+            <pattern id="seminary-lattice" width="84" height="84" patternUnits="userSpaceOnUse">
+              <path
+                d="M42 6 L52 32 L78 42 L52 52 L42 78 L32 52 L6 42 L32 32 Z"
+                fill="none"
+                stroke="#f5d08a"
+                strokeWidth="0.7"
+              />
+              <rect
+                x="18"
+                y="18"
+                width="48"
+                height="48"
+                fill="none"
+                stroke="#93c5fd"
+                strokeWidth="0.45"
+                transform="rotate(45 42 42)"
+              />
+              <circle cx="42" cy="42" r="2.2" fill="#f5d08a" opacity="0.65" />
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#seminary-lattice)" />
+        </svg>
+
+        {/* Quiet ambient light orbs */}
+        <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-[620px] h-[340px] bg-amber-400/10 rounded-full blur-[110px]" />
+        <div className="absolute -bottom-32 left-1/2 -translate-x-1/2 w-[640px] h-[360px] bg-sky-600/12 rounded-full blur-[120px]" />
       </div>
 
       {/* 2. Main Login Box: Centered Exactly in the Middle */}
-      <div className="relative z-10 w-full max-w-md flex items-center justify-center">
-        {/* Glow halo & Illuminated Outer Neon Border around the login box */}
+      <div className="relative z-10 w-full max-w-[440px] flex items-center justify-center">
         <div className="relative group/card w-full">
-          {/* Animated Neon/Cyan-Indigo Glow Aura around the card */}
-          <div className="absolute -inset-1.5 rounded-[32px] bg-gradient-to-r from-blue-600 via-indigo-500 to-cyan-400 opacity-70 blur-xl animate-border-glow group-hover/card:opacity-100 group-hover/card:blur-2xl transition-all duration-700 pointer-events-none" />
+          {/* Subtle warm champagne-gold & sapphire outer aura */}
+          <div className="absolute -inset-1 rounded-[30px] bg-gradient-to-b from-amber-300/25 via-sky-400/15 to-amber-500/20 opacity-75 blur-xl group-hover/card:opacity-95 transition-opacity duration-700 pointer-events-none" />
 
-          {/* Secondary crystal gradient line border */}
-          <div className="absolute -inset-[1px] rounded-[28px] bg-gradient-to-r from-blue-400/80 via-indigo-400/60 to-cyan-400/80 opacity-80 pointer-events-none" />
+          {/* Crisp metallic hairline outer border */}
+          <div className="absolute -inset-[1px] rounded-[28px] bg-gradient-to-b from-amber-200/45 via-white/15 to-sky-300/30 pointer-events-none" />
 
           {/* The Login Glassmorphic Window */}
           <motion.div
             id="login-glass-card"
-            initial={{ opacity: 0, scale: 0.95, y: 15 }}
+            initial={{ opacity: 0, scale: 0.96, y: 14 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            whileHover={{
-              scale: 1.025,
-              y: -5,
-              transition: { type: "spring", stiffness: 350, damping: 20 }
-            }}
-            transition={{ duration: 0.35, ease: 'easeInOut' }}
-            className="relative z-10 w-full rounded-[26px] bg-slate-900/90 backdrop-blur-2xl border border-white/20 p-5 sm:p-8 text-white shadow-2xl overflow-hidden transition-all duration-300 max-h-[92vh] overflow-y-auto"
+            transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
+            className="relative z-10 w-full rounded-[27px] bg-[#0a1328]/92 backdrop-blur-2xl border border-white/10 p-6 sm:p-8 text-white shadow-[0_28px_80px_-20px_rgba(0,0,0,0.85)] overflow-hidden max-h-[92vh] overflow-y-auto"
           >
-            {/* Sweeping Shimmer Sheen across the entire card */}
-            <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-[26px]">
-              <div className="absolute top-0 bottom-0 left-0 w-48 bg-gradient-to-r from-transparent via-white/10 to-transparent skew-x-[-25deg] animate-card-shine pointer-events-none" />
+            {/* Top gold architectural hairline reflection */}
+            <div className="absolute top-0 inset-x-10 h-[2px] bg-gradient-to-r from-transparent via-amber-300/80 to-transparent pointer-events-none" />
+
+            {/* Subtle internal corner glow */}
+            <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-64 h-36 bg-amber-400/12 rounded-full blur-3xl pointer-events-none" />
+
+            {/* Header: Seminary identity with Radiant Opening Light Flash Reveal */}
+            <div className="relative text-center space-y-3 mb-6 pt-1">
+              {/* Opening Golden Light Flash (Blooms & fades gently as the title emerges) */}
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute top-14 left-1/2 w-64 h-64 rounded-full login-light-burst"
+                style={{
+                  background:
+                    'radial-gradient(circle, rgba(254, 243, 199, 0.85) 0%, rgba(245, 189, 86, 0.42) 32%, rgba(56, 189, 248, 0.14) 58%, transparent 74%)'
+                }}
+              />
+              {/* Horizontal Prism Flare passing across the emblem/title on reveal */}
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute top-[5.25rem] left-1/2 w-full h-[2px] login-horizon-flare"
+                style={{
+                  background:
+                    'linear-gradient(90deg, transparent 0%, rgba(253, 230, 138, 0.35) 20%, rgba(255, 255, 255, 0.98) 50%, rgba(253, 230, 138, 0.35) 80%, transparent 100%)',
+                  boxShadow: '0 0 22px 4px rgba(251, 191, 36, 0.55)'
+                }}
+              />
+
+              {/* Geometric Seminary Emblem */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.72, y: 8 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                transition={{ duration: 0.7, delay: 0.12, ease: [0.16, 1, 0.3, 1] }}
+                className="relative z-10 flex justify-center"
+              >
+                <div className="relative w-16 h-16 sm:w-[68px] sm:h-[68px] rounded-2xl bg-gradient-to-b from-amber-400/20 via-[#132347] to-[#0b152d] border border-amber-300/35 shadow-[0_12px_30px_-8px_rgba(245,158,11,0.35)] flex items-center justify-center">
+                  {/* Subtle inner octagonal accent frame */}
+                  <div className="absolute inset-1.5 rounded-xl border border-amber-200/15 pointer-events-none" />
+                  <BookOpen size={28} className="text-amber-200 drop-shadow-[0_0_12px_rgba(251,191,36,0.45)]" />
+                </div>
+              </motion.div>
+
+              {/* Illuminated School Name Reveal */}
+              <motion.div
+                initial={{ opacity: 0, y: 10, scale: 0.96, filter: 'blur(6px)' }}
+                animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
+                transition={{ duration: 0.85, delay: 0.24, ease: [0.16, 1, 0.3, 1] }}
+                className="relative z-10 space-y-2"
+              >
+                <h1 className="text-xl sm:text-[23px] font-black tracking-tight leading-snug login-title-luminous drop-shadow-[0_2px_18px_rgba(251,191,36,0.22)]">
+                  مدرسه تخصصی فقه امام کاظم (ع)
+                </h1>
+
+                {/* Clean ornamental subtitle (Zero-pill discipline) */}
+                <div className="flex items-center justify-center gap-2.5 pt-0.5">
+                  <span className="h-[1px] w-8 bg-gradient-to-l from-amber-300/55 to-transparent" />
+                  <p className="text-[11.5px] text-slate-300/90 font-medium tracking-wide">
+                    سامانه جامع مدیریت آموزشی، پژوهشی و مالی
+                  </p>
+                  <span className="h-[1px] w-8 bg-gradient-to-r from-amber-300/55 to-transparent" />
+                </div>
+              </motion.div>
             </div>
-
-            {/* Top Edge Prism Reflection with breathing pulse */}
-            <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-cyan-300 to-transparent pointer-events-none animate-pulse" />
-
-            {/* Subtle Corner Ambient Accents */}
-            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/15 rounded-full blur-2xl pointer-events-none" />
-            <div className="absolute bottom-0 left-0 w-32 h-32 bg-indigo-500/15 rounded-full blur-2xl pointer-events-none" />
-
-        {/* Header: Seminary identity */}
-        <div className="text-center space-y-2.5 mb-5">
-          {/* Emblem Vector Icon Badge */}
-          <div className="flex justify-center mb-1">
-            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-tr from-blue-600/30 via-indigo-500/25 to-cyan-400/25 border border-white/25 shadow-xl flex items-center justify-center ring-2 ring-white/10 backdrop-blur-md">
-              <BookOpen size={28} className="text-cyan-300 drop-shadow-md" />
-            </div>
-          </div>
-
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight drop-shadow-sm">
-              مدرسه تخصصی فقه امام کاظم (ع)
-            </h1>
-            <div className="inline-flex items-center gap-1.5 mt-2 px-3 py-1 bg-white/10 rounded-full border border-white/20 text-[11px] text-white/80 font-medium">
-              <ShieldCheck size={13} className="text-blue-300" />
-              <span>سامانه جامع مدیریت آموزشی، پژوهشی و مالی</span>
-            </div>
-          </div>
-        </div>
 
         {/* In-App PWA Install Banner on Login View */}
         <div className="mb-4">
@@ -347,7 +413,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
 
         {/* Maintenance Mode Active Banner */}
         {maintenanceBanner?.enabled && (
-          <div className="mb-4 p-3.5 rounded-xl bg-amber-500/20 border border-amber-400/50 backdrop-blur-md text-amber-100 text-xs flex items-start gap-2.5 shadow-lg">
+          <div className="mb-4 p-3.5 rounded-xl bg-amber-500/15 border border-amber-400/45 backdrop-blur-md text-amber-100 text-xs flex items-start gap-2.5 shadow-lg">
             <Wrench size={18} className="text-amber-300 shrink-0 mt-0.5" />
             <div className="space-y-1 flex-1 leading-relaxed">
               <div className="font-black text-amber-200">سامانه در حال تعمیر و نگهداری فنی است</div>
@@ -368,7 +434,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -10, scale: 0.96 }}
               transition={{ duration: 0.25 }}
-              className="mb-5 p-3.5 rounded-xl bg-emerald-500/25 border border-emerald-400/50 backdrop-blur-md text-white text-xs sm:text-sm font-medium flex items-start gap-2.5 shadow-lg"
+              className="mb-5 p-3.5 rounded-xl bg-emerald-500/20 border border-emerald-400/45 backdrop-blur-md text-white text-xs sm:text-sm font-medium flex items-start gap-2.5 shadow-lg"
               role="alert"
             >
               <CheckCircle2 size={18} className="text-emerald-300 shrink-0 mt-0.5" />
@@ -392,7 +458,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -10, scale: 0.96 }}
               transition={{ duration: 0.25 }}
-              className="mb-5 p-3.5 rounded-xl bg-rose-500/25 border border-rose-400/50 backdrop-blur-md text-white text-xs sm:text-sm font-medium flex items-start gap-2.5 shadow-lg"
+              className="mb-5 p-3.5 rounded-xl bg-rose-500/20 border border-rose-400/45 backdrop-blur-md text-white text-xs sm:text-sm font-medium flex items-start gap-2.5 shadow-lg"
               role="alert"
             >
               <AlertCircle size={18} className="text-rose-300 shrink-0 mt-0.5" />
@@ -413,11 +479,11 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Username Field */}
           <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-white/90 text-right">
+            <label className="block text-xs font-semibold text-slate-200 text-right">
               نام کاربری یا شناسه سازمانی
             </label>
-            <div className="relative flex items-center">
-              <div className="absolute right-3.5 text-white/60 pointer-events-none flex items-center justify-center">
+            <div className="relative flex items-center group/input">
+              <div className="absolute right-3.5 text-slate-400 group-focus-within/input:text-amber-300 transition-colors pointer-events-none flex items-center justify-center">
                 <User size={18} />
               </div>
               <input
@@ -429,18 +495,18 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                 autoComplete="username"
                 dir="ltr"
                 disabled={isLoading || cooldownSeconds > 0}
-                className="w-full py-3 pr-10 pl-4 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/40 text-sm font-medium focus:bg-white/20 focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20 outline-none transition-all disabled:opacity-50 text-right"
+                className="w-full py-3 pr-10 pl-4 bg-[#101c38]/85 border border-white/15 rounded-xl text-white placeholder-slate-400/70 text-sm font-medium focus:bg-[#142346] focus:border-amber-300/70 focus:ring-2 focus:ring-amber-400/20 outline-none transition-all disabled:opacity-50 text-right"
               />
             </div>
           </div>
 
           {/* Password Field */}
           <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-white/90 text-right">
+            <label className="block text-xs font-semibold text-slate-200 text-right">
               کلمه عبور
             </label>
-            <div className="relative flex items-center">
-              <div className="absolute right-3.5 text-white/60 pointer-events-none flex items-center justify-center">
+            <div className="relative flex items-center group/input">
+              <div className="absolute right-3.5 text-slate-400 group-focus-within/input:text-amber-300 transition-colors pointer-events-none flex items-center justify-center">
                 <Lock size={18} />
               </div>
               <input
@@ -452,13 +518,13 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                 autoComplete="current-password"
                 dir="ltr"
                 disabled={isLoading || cooldownSeconds > 0}
-                className="w-full py-3 pr-10 pl-11 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/40 text-sm font-medium focus:bg-white/20 focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20 outline-none transition-all disabled:opacity-50 text-right"
+                className="w-full py-3 pr-10 pl-11 bg-[#101c38]/85 border border-white/15 rounded-xl text-white placeholder-slate-400/70 text-sm font-medium focus:bg-[#142346] focus:border-amber-300/70 focus:ring-2 focus:ring-amber-400/20 outline-none transition-all disabled:opacity-50 text-right"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
                 tabIndex={-1}
-                className="absolute left-3 text-white/60 hover:text-white p-1 rounded-md transition-colors"
+                className="absolute left-3 text-slate-400 hover:text-amber-200 p-1 rounded-md transition-colors cursor-pointer"
                 title={showPassword ? 'مخفی‌سازی رمز عبور' : 'نمایش رمز عبور'}
               >
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -467,24 +533,23 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
           </div>
 
           {/* Submit Button & 1-Click Fast Login */}
-          <div className="pt-2 space-y-2">
+          <div className="pt-2.5 space-y-2">
             <button
               id="login-submit-button"
               type="submit"
               disabled={isLoading || cooldownSeconds > 0}
-              className="relative overflow-hidden w-full py-3.5 px-4 rounded-xl font-bold text-white text-sm bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-600 hover:from-blue-500 hover:to-indigo-500 active:scale-[0.99] shadow-lg shadow-indigo-600/35 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer group"
+              className="relative overflow-hidden w-full py-3.5 px-4 rounded-xl font-black text-slate-950 text-sm bg-gradient-to-l from-amber-400 via-amber-300 to-yellow-200 hover:from-amber-300 hover:via-amber-200 hover:to-yellow-100 active:scale-[0.99] shadow-[0_12px_30px_-8px_rgba(245,158,11,0.45)] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer group"
             >
-              {/* Sweeping dynamic shimmer beam that travels periodically across button */}
+              {/* Sweeping shimmer beam across primary button */}
               <span className="absolute inset-0 w-full h-full pointer-events-none overflow-hidden rounded-xl">
-                <span className="absolute top-0 bottom-0 left-0 w-32 bg-gradient-to-r from-transparent via-white/40 to-transparent skew-x-[-20deg] animate-login-shine pointer-events-none" />
+                <span className="absolute top-0 bottom-0 left-0 w-32 bg-gradient-to-r from-transparent via-white/55 to-transparent skew-x-[-20deg] animate-login-shine pointer-events-none" />
               </span>
 
-              {/* Gentle breathing glow border */}
-              <span className="absolute inset-0 rounded-xl ring-1 ring-inset ring-white/30 group-hover:ring-white/50 transition-all pointer-events-none" />
+              <span className="absolute inset-0 rounded-xl ring-1 ring-inset ring-white/40 group-hover:ring-white/60 transition-all pointer-events-none" />
 
               {isLoading ? (
                 <>
-                  <Loader2 size={18} className="animate-spin text-white relative z-10" />
+                  <Loader2 size={18} className="animate-spin text-slate-950 relative z-10" />
                   <span className="relative z-10">در حال احراز هویت و ورود...</span>
                 </>
               ) : cooldownSeconds > 0 ? (
@@ -509,9 +574,9 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                   handleDirectLogin(adminUser);
                 }}
                 disabled={isLoading}
-                className="w-full py-2.5 px-3 rounded-xl text-xs font-bold bg-amber-500/20 hover:bg-amber-500/35 text-amber-200 border border-amber-400/40 transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-[0.99] cursor-pointer"
+                className="w-full py-2.5 px-3 rounded-xl text-xs font-bold bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-200 border border-emerald-400/40 transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-[0.99] cursor-pointer"
               >
-                <Sparkles size={14} className="text-amber-300 animate-pulse" />
+                <Sparkles size={14} className="text-emerald-300 animate-pulse" />
                 <span>⚡ ورود سریع با یک کلیک (حالت آزمایشی - صادق)</span>
               </button>
             )}

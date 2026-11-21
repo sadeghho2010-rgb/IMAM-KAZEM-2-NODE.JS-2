@@ -3654,6 +3654,23 @@ function toEnglishDigits(str) {
   if (!str) return "";
   return String(str).replace(/[۰-۹]/g, (d) => "\u06F0\u06F1\u06F2\u06F3\u06F4\u06F5\u06F6\u06F7\u06F8\u06F9".indexOf(d).toString()).replace(/[٠-٩]/g, (d) => "\u0660\u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668\u0669".indexOf(d).toString());
 }
+function parseShamsiDate(shamsiStr) {
+  const cleaned = toEnglishDigits(shamsiStr).trim().replace(/-/g, "/");
+  const parts = cleaned.split("/");
+  if (parts.length !== 3) {
+    return { year: 1405, month: 1, day: 1 };
+  }
+  const year = parseInt(parts[0], 10) || 1405;
+  const month = parseInt(parts[1], 10) || 1;
+  const day = parseInt(parts[2], 10) || 1;
+  return { year, month, day };
+}
+function formatShamsiDate(year, month, day) {
+  const yStr = String(year).padStart(4, "0");
+  const mStr = String(month).padStart(2, "0");
+  const dStr = String(day).padStart(2, "0");
+  return `${yStr}/${mStr}/${dStr}`;
+}
 function normalizeShamsiDateStr(raw) {
   if (!raw) return "";
   const eng = toEnglishDigits(raw).trim().replace(/-/g, "/");
@@ -3671,6 +3688,25 @@ function normalizeShamsiDateStr(raw) {
     return `${y}/${m}/${d}`;
   }
   return eng;
+}
+function shamsiToDate(shamsiStr) {
+  try {
+    const { year, month, day } = parseShamsiDate(shamsiStr);
+    const safeYear = Math.max(1300, Math.min(1500, year || 1405));
+    const safeMonth = Math.max(1, Math.min(12, month || 1));
+    const safeDay = Math.max(1, Math.min(31, day || 1));
+    const { gy, gm, gd } = jalaali.toGregorian(safeYear, safeMonth, safeDay);
+    return new Date(gy, gm - 1, gd, 12, 0, 0);
+  } catch (e) {
+    return /* @__PURE__ */ new Date();
+  }
+}
+function dateToShamsi(date) {
+  const gy = date.getFullYear();
+  const gm = date.getMonth() + 1;
+  const gd = date.getDate();
+  const { jy, jm, jd } = jalaali.toJalaali(gy, gm, gd);
+  return formatShamsiDate(jy, jm, jd);
 }
 function getConsolidatedSessionLog(logs, programId, dateStr, progTitle) {
   if (!logs || !Array.isArray(logs) || logs.length === 0 || !programId && !progTitle || !dateStr) {
@@ -3757,6 +3793,246 @@ var jalaali;
 var init_jalali = __esm({
   "src/lib/jalali.ts"() {
     jalaali = __toESM(require("jalaali-js"), 1);
+  }
+});
+
+// src/lib/autoAnnouncementHelper.ts
+function getStudyPeriodAnnouncementId(periodId) {
+  return `${AUTO_STUDY_PERIOD_PREFIX}${String(periodId).trim()}`;
+}
+function getMealPeriodAnnouncementId(periodId) {
+  return `${AUTO_MEAL_PERIOD_PREFIX}${String(periodId).trim()}`;
+}
+function formatReadableShamsiDate(raw) {
+  if (!raw) return "";
+  const str = String(raw).trim();
+  if (!str) return "";
+  const eng = toEnglishDigits(str);
+  if (/^\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}$/.test(eng)) {
+    return normalizeShamsiDateStr(eng);
+  }
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    try {
+      return parsed.toLocaleDateString("fa-IR");
+    } catch {
+      return dateToShamsi(parsed);
+    }
+  }
+  return str;
+}
+function isStudyPeriodCurrentlyOpen(period) {
+  if (!period) return false;
+  if (period.isDeleted === true || period.status === "deleted") {
+    return false;
+  }
+  if (period.isClosed === true || period.isClosed === "true" || period.status === "closed" || period.isActive === false || period.status === "inactive" || period.status === "locked") {
+    return false;
+  }
+  if (period.manuallyOpened === true && period.isClosed === false) {
+    return true;
+  }
+  if (period.deadlineDate) {
+    try {
+      const dStr = toEnglishDigits(String(period.deadlineDate)).trim();
+      const now = /* @__PURE__ */ new Date();
+      let deadline = null;
+      if (dStr.includes("/") || dStr.includes("-")) {
+        const parts = dStr.replace(/-/g, "/").split("/");
+        if (parts.length === 3 && parseInt(parts[0], 10) < 1700) {
+          deadline = shamsiToDate(dStr);
+          deadline.setHours(23, 59, 59, 999);
+        } else {
+          deadline = new Date(dStr);
+        }
+      } else {
+        deadline = new Date(dStr);
+      }
+      if (deadline && !isNaN(deadline.getTime())) {
+        return now.getTime() <= deadline.getTime();
+      }
+    } catch {
+      return true;
+    }
+  }
+  return true;
+}
+function isMealPeriodCurrentlyOpen(period) {
+  if (!period) return false;
+  if (period.isDeleted === true || period.status === "deleted") {
+    return false;
+  }
+  if (period.isManuallyClosed === true || period.status !== "open") {
+    return false;
+  }
+  if (period.deadlineDate) {
+    const todayShamsi = normalizeShamsiDateStr(dateToShamsi(/* @__PURE__ */ new Date()));
+    const normDeadline = normalizeShamsiDateStr(period.deadlineDate);
+    if (/^\d{4}\/\d{2}\/\d{2}$/.test(normDeadline) && todayShamsi > normDeadline) {
+      return false;
+    }
+  }
+  return true;
+}
+function buildDefaultStudyPeriodAnnouncementContent(period) {
+  const periodTitle = String(period.title || "\u062F\u0648\u0631\u0647 \u062C\u062F\u06CC\u062F").trim();
+  const startLabel = formatReadableShamsiDate(period.startDate);
+  const endLabel = formatReadableShamsiDate(period.endDate);
+  const deadlineLabel = formatReadableShamsiDate(period.deadlineDate);
+  const lines = [
+    `\u0628\u0647 \u0627\u0637\u0644\u0627\u0639 \u062A\u0645\u0627\u0645\u06CC \u06A9\u0627\u0631\u0628\u0631\u0627\u0646 \u06AF\u0631\u0627\u0645\u06CC \u0645\u06CC\u200C\u0631\u0633\u0627\u0646\u062F \u062F\u0648\u0631\u0647 \u062B\u0628\u062A \u0645\u0637\u0627\u0644\u0639\u0647 \xAB${periodTitle}\xBB \u0647\u0645\u200C\u0627\u06A9\u0646\u0648\u0646 \u0628\u0627\u0632 \u0634\u062F\u0647 \u0627\u0633\u062A.`
+  ];
+  if (startLabel && endLabel) {
+    lines.push(`\u0628\u0627\u0632\u0647 \u0645\u0637\u0627\u0644\u0639\u0627\u062A\u06CC: ${startLabel} \u062A\u0627 ${endLabel}`);
+  }
+  if (deadlineLabel) {
+    lines.push(`\u0645\u0647\u0644\u062A \u062B\u0628\u062A \u06AF\u0632\u0627\u0631\u0634 \u0645\u0637\u0627\u0644\u0639\u0647: \u062A\u0627 \u067E\u0627\u06CC\u0627\u0646 ${deadlineLabel}`);
+  }
+  lines.push("\u0644\u0637\u0641\u0627\u064B \u062F\u0631 \u0628\u0627\u0632\u0647 \u0632\u0645\u0627\u0646\u06CC \u0645\u0642\u0631\u0631 \u0646\u0633\u0628\u062A \u0628\u0647 \u062B\u0628\u062A \u0633\u0627\u0639\u0627\u062A \u0645\u0637\u0627\u0644\u0639\u0647 \u062F\u0631 \u0633\u0627\u0645\u0627\u0646\u0647 \u0627\u0642\u062F\u0627\u0645 \u0641\u0631\u0645\u0627\u06CC\u06CC\u062F.");
+  return {
+    title: `\u0622\u063A\u0627\u0632 \u062B\u0628\u062A \u0645\u0637\u0627\u0644\u0639\u0647: ${periodTitle}`,
+    message: lines.join("\n")
+  };
+}
+function buildDefaultMealPeriodAnnouncementContent(period) {
+  const periodTitle = String(period.title || "\u062F\u0648\u0631\u0647 \u062C\u062F\u06CC\u062F").trim();
+  const hasLunch = period.enableLunch !== false;
+  const hasDinner = period.enableDinner !== false;
+  const mealTypeLabel = hasLunch && hasDinner ? "\u0646\u0647\u0627\u0631 \u0648 \u0634\u0627\u0645" : hasLunch ? "\u0646\u0647\u0627\u0631" : hasDinner ? "\u0634\u0627\u0645" : "\u063A\u0630\u0627";
+  const startLabel = formatReadableShamsiDate(period.startDate);
+  const endLabel = formatReadableShamsiDate(period.endDate);
+  const deadlineLabel = formatReadableShamsiDate(period.deadlineDate);
+  const lines = [
+    `\u0628\u0647 \u0627\u0637\u0644\u0627\u0639 \u062A\u0645\u0627\u0645\u06CC \u06A9\u0627\u0631\u0628\u0631\u0627\u0646 \u06AF\u0631\u0627\u0645\u06CC \u0645\u06CC\u200C\u0631\u0633\u0627\u0646\u062F \u0633\u0627\u0645\u0627\u0646\u0647 \u0631\u0632\u0631\u0648 ${mealTypeLabel} \u0628\u0631\u0627\u06CC \xAB${periodTitle}\xBB \u0647\u0645\u200C\u0627\u06A9\u0646\u0648\u0646 \u0628\u0627\u0632 \u0634\u062F.`
+  ];
+  if (startLabel && endLabel) {
+    lines.push(`\u0628\u0627\u0632\u0647 \u0632\u0645\u0627\u0646\u06CC \u062F\u0648\u0631\u0647: ${startLabel} \u062A\u0627 ${endLabel}`);
+  }
+  if (deadlineLabel) {
+    lines.push(`\u0645\u0647\u0644\u062A \u0646\u0647\u0627\u06CC\u06CC \u062B\u0628\u062A \u06CC\u0627 \u062A\u063A\u06CC\u06CC\u0631 \u0631\u0632\u0631\u0648: \u062A\u0627 \u067E\u0627\u06CC\u0627\u0646 ${deadlineLabel}`);
+  }
+  lines.push("\u0644\u0637\u0641\u0627\u064B \u062F\u0631 \u0645\u0647\u0644\u062A \u062A\u0639\u06CC\u06CC\u0646\u200C\u0634\u062F\u0647 \u0646\u0633\u0628\u062A \u0628\u0647 \u062B\u0628\u062A \u0631\u0632\u0631\u0648 \u0648\u0639\u062F\u0647\u200C\u0647\u0627\u06CC \u062E\u0648\u062F \u0627\u0642\u062F\u0627\u0645 \u0641\u0631\u0645\u0627\u06CC\u06CC\u062F.");
+  return {
+    title: `\u0622\u063A\u0627\u0632 \u0631\u0632\u0631\u0648 ${mealTypeLabel}: ${periodTitle}`,
+    message: lines.join("\n")
+  };
+}
+function computePeriodAutoAnnouncementUpdate(params) {
+  const { kind, period, previousPeriod, existingAnnouncement, actorUser } = params;
+  const nowIso = params.nowIso || (/* @__PURE__ */ new Date()).toISOString();
+  const periodId = String(period?.id || previousPeriod?.id || "").trim();
+  const annId = kind === "study_period" ? getStudyPeriodAnnouncementId(periodId) : getMealPeriodAnnouncementId(periodId);
+  if (!periodId) {
+    return { action: "noop", id: annId };
+  }
+  if (!period || period.isDeleted === true || period.status === "deleted") {
+    if (existingAnnouncement) {
+      return { action: "delete", id: annId };
+    }
+    return { action: "noop", id: annId };
+  }
+  const wasOpen = kind === "study_period" ? isStudyPeriodCurrentlyOpen(previousPeriod) : isMealPeriodCurrentlyOpen(previousPeriod);
+  const isNowOpen = kind === "study_period" ? isStudyPeriodCurrentlyOpen(period) : isMealPeriodCurrentlyOpen(period);
+  const defaultContent = kind === "study_period" ? buildDefaultStudyPeriodAnnouncementContent(period) : buildDefaultMealPeriodAnnouncementContent(period);
+  const actorUsername = String(
+    actorUser?.username || period?.createdBy || "system"
+  );
+  const actorName = String(
+    actorUser?.fullName || actorUser?.name || period?.createdByName || (kind === "meal_period" ? "\u0633\u0627\u0645\u0627\u0646\u0647 \u062A\u063A\u0630\u06CC\u0647 (\u062E\u0648\u062F\u06A9\u0627\u0631)" : "\u0633\u0627\u0645\u0627\u0646\u0647 \u0622\u0645\u0648\u0632\u0634 (\u062E\u0648\u062F\u06A9\u0627\u0631)")
+  );
+  if (!wasOpen && isNowOpen) {
+    if (!existingAnnouncement) {
+      return {
+        action: "upsert",
+        id: annId,
+        announcement: {
+          id: annId,
+          title: defaultContent.title,
+          message: defaultContent.message,
+          priority: "important",
+          targetAudience: "all",
+          isActive: true,
+          autoSourceType: kind,
+          sourcePeriodId: periodId,
+          isCustomized: false,
+          manuallyDeactivated: false,
+          createdAt: nowIso,
+          createdBy: actorUsername,
+          createdByName: actorName,
+          updated_at: nowIso,
+          version: 1
+        }
+      };
+    }
+    if (existingAnnouncement.manuallyDeactivated === true) {
+      return { action: "noop", id: annId };
+    }
+    const nextVersion = (Number(existingAnnouncement.version) || 0) + 1;
+    const keepCustom = existingAnnouncement.isCustomized === true;
+    return {
+      action: "upsert",
+      id: annId,
+      announcement: {
+        ...existingAnnouncement,
+        id: annId,
+        title: keepCustom ? existingAnnouncement.title : defaultContent.title,
+        message: keepCustom ? existingAnnouncement.message : defaultContent.message,
+        targetAudience: keepCustom ? existingAnnouncement.targetAudience : "all",
+        isActive: true,
+        autoSourceType: kind,
+        sourcePeriodId: periodId,
+        manuallyDeactivated: false,
+        updated_at: nowIso,
+        version: nextVersion
+      }
+    };
+  }
+  if (wasOpen && isNowOpen) {
+    if (!existingAnnouncement) {
+      return { action: "noop", id: annId };
+    }
+    if (existingAnnouncement.isCustomized === true || existingAnnouncement.manuallyDeactivated === true || existingAnnouncement.isActive === false) {
+      return { action: "noop", id: annId };
+    }
+    if (existingAnnouncement.title !== defaultContent.title || existingAnnouncement.message !== defaultContent.message) {
+      const nextVersion = (Number(existingAnnouncement.version) || 0) + 1;
+      return {
+        action: "upsert",
+        id: annId,
+        announcement: {
+          ...existingAnnouncement,
+          title: defaultContent.title,
+          message: defaultContent.message,
+          updated_at: nowIso,
+          version: nextVersion
+        }
+      };
+    }
+    return { action: "noop", id: annId };
+  }
+  if (wasOpen && !isNowOpen) {
+    if (existingAnnouncement && existingAnnouncement.isActive !== false) {
+      const nextVersion = (Number(existingAnnouncement.version) || 0) + 1;
+      return {
+        action: "upsert",
+        id: annId,
+        announcement: {
+          ...existingAnnouncement,
+          isActive: false,
+          updated_at: nowIso,
+          version: nextVersion
+        }
+      };
+    }
+  }
+  return { action: "noop", id: annId };
+}
+var AUTO_STUDY_PERIOD_PREFIX, AUTO_MEAL_PERIOD_PREFIX;
+var init_autoAnnouncementHelper = __esm({
+  "src/lib/autoAnnouncementHelper.ts"() {
+    init_jalali();
+    AUTO_STUDY_PERIOD_PREFIX = "auto_study_period_";
+    AUTO_MEAL_PERIOD_PREFIX = "auto_meal_period_";
   }
 });
 
@@ -3897,6 +4173,35 @@ function authorizeCollectionAccess(user, collection, action, recordOwnerId) {
       return { allowed: true };
     }
     return { allowed: false, reason: "\u0627\u062D\u0631\u0627\u0632 \u0647\u0648\u06CC\u062A \u0627\u0644\u0632\u0627\u0645\u06CC \u0627\u0633\u062A. \u0645\u0634\u0627\u0647\u062F\u0647 \u06CC\u0627 \u0648\u06CC\u0631\u0627\u06CC\u0634 \u0627\u06CC\u0646 \u062F\u0627\u062F\u0647\u200C\u0647\u0627 \u0646\u06CC\u0627\u0632\u0645\u0646\u062F \u0648\u0631\u0648\u062F \u0628\u0647 \u0633\u0627\u0645\u0627\u0646\u0647 \u0627\u0633\u062A." };
+  }
+  if (collection === "announcements") {
+    if (action === "read") return { allowed: true };
+    if (user.isReadOnly === true || user.canEdit === false) {
+      return { allowed: false, reason: "\u06A9\u0627\u0631\u0628\u0631\u0627\u0646 \u062F\u0627\u0631\u0627\u06CC \u062F\u0633\u062A\u0631\u0633\u06CC \u0641\u0642\u0637\u200C\u0645\u0634\u0627\u0647\u062F\u0647 \u0645\u062C\u0627\u0632 \u0628\u0647 \u0627\u06CC\u062C\u0627\u062F \u06CC\u0627 \u062A\u063A\u06CC\u06CC\u0631 \u0627\u0637\u0644\u0627\u0639\u06CC\u0647 \u0646\u06CC\u0633\u062A\u0646\u062F." };
+    }
+    const uName = String(user.username || "").toUpperCase();
+    const canManageAnnouncements = user.role === "super_admin" || user.level === 1 && user.role !== "school_manager" || user.role === "education_manager" || user.role === "education_officer" || uName === "SADEGH" || uName === "SHAH" || uName === "SHAHPOORI";
+    if (canManageAnnouncements) return { allowed: true };
+    return { allowed: false, reason: "\u0645\u062F\u06CC\u0631\u06CC\u062A \u0627\u0637\u0644\u0627\u0639\u06CC\u0647\u200C\u0647\u0627 \u0645\u0646\u062D\u0635\u0631\u0627\u064B \u062F\u0631 \u0627\u062E\u062A\u06CC\u0627\u0631 \u0645\u0633\u0626\u0648\u0644 \u0622\u0645\u0648\u0632\u0634 \u0648 \u0633\u0648\u067E\u0631 \u0627\u062F\u0645\u06CC\u0646 \u0627\u0633\u062A." };
+  }
+  if (collection === "announcement_dismissals") {
+    if (action === "read") return { allowed: true };
+    if (action === "write") {
+      const candidateOwnerIds = [user.id, user.studentId, user.linkedStudentId, user.username].filter(Boolean).map((x) => String(x).trim().toLowerCase());
+      if (!recordOwnerId || candidateOwnerIds.includes(String(recordOwnerId).trim().toLowerCase())) {
+        return { allowed: true };
+      }
+      const uName2 = String(user.username || "").toUpperCase();
+      if (user.role === "super_admin" || user.role === "education_manager" || uName2 === "SADEGH" || uName2 === "SHAH") {
+        return { allowed: true };
+      }
+      return { allowed: false, reason: "\u0634\u0645\u0627 \u0641\u0642\u0637 \u0645\u062C\u0627\u0632 \u0628\u0647 \u062B\u0628\u062A \u0648\u0636\u0639\u06CC\u062A \u0646\u0645\u0627\u06CC\u0634 \u0627\u0637\u0644\u0627\u0639\u06CC\u0647\u200C\u0647\u0627\u06CC \u062E\u0648\u062F \u0647\u0633\u062A\u06CC\u062F." };
+    }
+    const uName = String(user.username || "").toUpperCase();
+    if (user.role === "super_admin" || user.role === "education_manager" || uName === "SADEGH" || uName === "SHAH") {
+      return { allowed: true };
+    }
+    return { allowed: false, reason: "\u062D\u0630\u0641 \u0633\u0627\u0628\u0642\u0647 \u062A\u0627\u06CC\u06CC\u062F \u0627\u0637\u0644\u0627\u0639\u06CC\u0647 \u0645\u062C\u0627\u0632 \u0646\u06CC\u0633\u062A." };
   }
   if (user.level === 1 || user.role === "super_admin" || user.role === "school_manager") {
     return { allowed: true };
@@ -4181,6 +4486,43 @@ async function syncStudentToUserAccount(studentRecord) {
     console.warn("Non-fatal syncStudentToUserAccount notice:", e);
   }
 }
+async function syncPeriodAutoAnnouncementOnServer(collection, periodDoc, previousPeriodDoc, callerUser) {
+  const isStudy = collection === "study_periods";
+  const isMeal = MEAL_PERIOD_COLLECTIONS.has(collection);
+  if (!isStudy && !isMeal) return;
+  const periodId = String(periodDoc?.id || previousPeriodDoc?.id || "").trim();
+  if (!periodId) return;
+  const kind = isStudy ? "study_period" : "meal_period";
+  const annId = isStudy ? getStudyPeriodAnnouncementId(periodId) : getMealPeriodAnnouncementId(periodId);
+  try {
+    let existingAnnouncement = null;
+    try {
+      existingAnnouncement = await MysqlRepository.getDocument("announcements", annId);
+    } catch (readErr) {
+      console.warn(`[STORAGE_FAILURE][autoAnnouncement.read] ID "${annId}":`, readErr?.message || readErr);
+    }
+    const decision = computePeriodAutoAnnouncementUpdate({
+      kind,
+      period: periodDoc,
+      previousPeriod: previousPeriodDoc,
+      existingAnnouncement,
+      actorUser: callerUser
+    });
+    if (decision.action === "upsert" && decision.announcement) {
+      await MysqlRepository.saveDocument("announcements", decision.id, decision.announcement);
+      invalidateCollectionCache("announcements");
+      notifyRealtimeChange("announcements", decision.id, "upsert");
+      console.log(`[STORAGE_SUCCESS][autoAnnouncement.upsert] Period "${collection}/${periodId}" -> Announcement "${decision.id}" (active=${decision.announcement.isActive}, v${decision.announcement.version})`);
+    } else if (decision.action === "delete") {
+      await MysqlRepository.deleteDocument("announcements", decision.id);
+      invalidateCollectionCache("announcements");
+      notifyRealtimeChange("announcements", decision.id, "delete");
+      console.log(`[STORAGE_SUCCESS][autoAnnouncement.delete] Period "${collection}/${periodId}" -> Deleted "${decision.id}"`);
+    }
+  } catch (err) {
+    console.error(`[STORAGE_FAILURE][autoAnnouncement.sync] Collection "${collection}", ID "${periodId}":`, err?.message || err);
+  }
+}
 async function serverSaveDoc(collection, idOrData, dataOrCallerUser) {
   if (!idOrData) return { success: false, id: "", error: "\u062F\u0627\u062F\u0647\u200C\u0647\u0627\u06CC \u0627\u0631\u0633\u0627\u0644\u06CC \u0646\u0627\u0645\u0639\u062A\u0628\u0631 \u0627\u0633\u062A." };
   let record;
@@ -4310,6 +4652,7 @@ async function serverSaveDoc(collection, idOrData, dataOrCallerUser) {
       const affectedRows = saveRes?.affectedRows ?? 1;
       const changedRows = saveRes?.changedRows ?? affectedRows;
       console.log(`[MySQL Fast Save Success] Collection: "${collection}", ID: "${id}", AffectedRows: ${affectedRows}`);
+      await syncPeriodAutoAnnouncementOnServer(collection, finalRecord, existingDocForAudit, callerUser);
       if (collection !== "audit_logs") {
         const isUpdate = Boolean(existingDocForAudit);
         const entityLabel = finalRecord.title || finalRecord.name || finalRecord.fullName || finalRecord.studentName || finalRecord.programTitle || finalRecord.username || id;
@@ -4418,6 +4761,7 @@ async function serverDeleteDoc(collection, id, callerUser) {
         notifyRealtimeChange("system_users", id, "delete");
       }
       invalidateCollectionCache(collection);
+      await syncPeriodAutoAnnouncementOnServer(collection, null, existingRecord || { id }, callerUser);
       if (collection !== "audit_logs") {
         const entityLabel = existingRecord?.title || existingRecord?.name || existingRecord?.fullName || existingRecord?.studentName || existingRecord?.programTitle || existingRecord?.username || id;
         const actorName = callerUser?.fullName || callerUser?.name || callerUser?.username || "\u0633\u06CC\u0633\u062A\u0645 \u0647\u0648\u0634\u0645\u0646\u062F";
@@ -4636,6 +4980,16 @@ function canUserReadDoc(user, collection, doc, context) {
       const docName = String(doc.studentName || doc.student_name || "").trim();
       return uStudentId && docStudentId === uStudentId || uUsername && (docNat === uUsername || docStudentId === uUsername) || uName && docName === uName;
     }
+  }
+  if (collection === "announcement_dismissals") {
+    const uName = String(user.username || "").toUpperCase();
+    const isAdminOrEdu = user.level === 1 || user.role === "super_admin" || user.role === "education_manager" || user.role === "education_officer" || uName === "SADEGH" || uName === "SHAH";
+    if (isAdminOrEdu) return true;
+    const candidates = [user.id, user.studentId, user.linkedStudentId, user.username].filter(Boolean).map((x) => String(x).trim().toLowerCase());
+    const docUser = String(doc.userId || "").trim().toLowerCase();
+    const docStudent = String(doc.studentId || "").trim().toLowerCase();
+    const docUname = String(doc.username || "").trim().toLowerCase();
+    return docUser && candidates.includes(docUser) || docStudent && candidates.includes(docStudent) || docUname && candidates.includes(docUname);
   }
   return true;
 }
@@ -4895,7 +5249,9 @@ async function fetchBootstrapData(callerUserOrLevel, userRole) {
     "curriculum_books",
     "curriculum_chapters",
     "student_course_progress",
-    "student_portal_access_config"
+    "student_portal_access_config",
+    "announcements",
+    "announcement_dismissals"
   ];
   const BATCH_SIZE = 6;
   const results = [];
@@ -5058,13 +5414,14 @@ async function executeOneTimeStudentPurgeV1() {
     console.warn("[Student Purge V1 Notice]:", err);
   }
 }
-var realtimeListeners, recentChangesBuffer, MAX_RECENT_CHANGES, rawCollectionCache, RAW_CACHE_TTL_MS, COLLECTION_TABLE_MAP, FINANCIAL_COLLECTIONS, USER_SPECIFIC_COLLECTIONS, PUBLIC_READ_COLLECTIONS, hasStartedStudentPurgeV1;
+var realtimeListeners, recentChangesBuffer, MAX_RECENT_CHANGES, rawCollectionCache, RAW_CACHE_TTL_MS, COLLECTION_TABLE_MAP, FINANCIAL_COLLECTIONS, USER_SPECIFIC_COLLECTIONS, PUBLIC_READ_COLLECTIONS, MEAL_PERIOD_COLLECTIONS, hasStartedStudentPurgeV1;
 var init_serverDataApi = __esm({
   "src/lib/serverDataApi.ts"() {
     init_serverAuth();
     init_databaseAbstraction();
     init_auditLogger();
     init_jalali();
+    init_autoAnnouncementHelper();
     realtimeListeners = /* @__PURE__ */ new Set();
     recentChangesBuffer = [];
     MAX_RECENT_CHANGES = 500;
@@ -5129,6 +5486,12 @@ var init_serverDataApi = __esm({
       "curriculum_books",
       "curriculum_chapters",
       "student_portal_access_config"
+    ]);
+    MEAL_PERIOD_COLLECTIONS = /* @__PURE__ */ new Set([
+      "finance_meal_periods",
+      "meal_periods",
+      "lunch_periods",
+      "meal_reservation_periods"
     ]);
     hasStartedStudentPurgeV1 = false;
     setTimeout(() => {
@@ -6160,7 +6523,9 @@ var init_serverAuth = __esm({
 var monitoringAccess_exports = {};
 __export(monitoringAccess_exports, {
   extractMonitoringToken: () => extractMonitoringToken,
+  isAuthorizedForMaintenance: () => isAuthorizedForMaintenance,
   isAuthorizedForMonitoring: () => isAuthorizedForMonitoring,
+  requireMaintenanceAccess: () => requireMaintenanceAccess,
   requireMonitoringAccess: () => requireMonitoringAccess
 });
 function isAuthorizedForMonitoring(user) {
@@ -6173,6 +6538,19 @@ function isAuthorizedForMonitoring(user) {
   const isEducationManager = role === "education_manager" || role === "education_officer" || usernameUpper === "SHAH" || name.includes("\u0622\u0645\u0648\u0632\u0634");
   const isFinanceManager = role === "finance_manager" || role === "financial_officer" || usernameUpper === "MALI" || name.includes("\u0645\u0627\u0644\u06CC");
   return isSuperAdmin || isEducationManager || isFinanceManager;
+}
+function isAuthorizedForMaintenance(user) {
+  if (!user) return false;
+  if (user.isReadOnly === true || user.canEdit === false) return false;
+  const usernameUpper = String(user.username || "").toUpperCase().trim();
+  const role = String(user.role || "").trim();
+  const level = Number(user.level) || 0;
+  if (role === "school_manager" || role === "manager_principal" || usernameUpper === "RAHNAMA") {
+    return false;
+  }
+  const isSuperAdmin = role === "super_admin" || usernameUpper === "SADEGH" || level === 1 && role !== "school_manager";
+  const isEducationOfficer = role === "education_manager" || role === "education_officer" || usernameUpper === "SHAH" || usernameUpper === "SHAHPOORI";
+  return isSuperAdmin || isEducationOfficer;
 }
 function extractMonitoringToken(req) {
   if (req.cookies && req.cookies.auth_access_token) {
@@ -6204,6 +6582,37 @@ function requireMonitoringAccess(req, res, next) {
     return res.status(403).json({
       success: false,
       message: "\u062F\u0633\u062A\u0631\u0633\u06CC \u0628\u0647 \u0628\u062E\u0634 \u067E\u0627\u06CC\u0634 \u0648 \u0639\u06CC\u0628\u200C\u06CC\u0627\u0628\u06CC \u0633\u0627\u0645\u0627\u0646\u0647 \u0641\u0642\u0637 \u0628\u0631\u0627\u06CC \u0645\u062F\u06CC\u0631 \u0627\u0631\u0634\u062F\u060C \u0645\u0633\u0626\u0648\u0644 \u0622\u0645\u0648\u0632\u0634 \u0648 \u0645\u0633\u0626\u0648\u0644 \u0645\u0627\u0644\u06CC \u0645\u062C\u0627\u0632 \u0627\u0633\u062A."
+    });
+  }
+  req.monitoringUser = {
+    id: user.id || user.userId || "",
+    username: user.username || "",
+    name: user.name || user.fullName || user.username || "",
+    role: user.role || "",
+    level: user.level || 2
+  };
+  next();
+}
+function requireMaintenanceAccess(req, res, next) {
+  const token = extractMonitoringToken(req);
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      message: "\u0627\u062D\u0631\u0627\u0632 \u0647\u0648\u06CC\u062A \u0627\u0644\u0632\u0627\u0645\u06CC \u0627\u0633\u062A."
+    });
+  }
+  const result = verifyAccessToken2(token);
+  if (!result.valid || !result.decoded) {
+    return res.status(401).json({
+      success: false,
+      message: "\u0627\u0639\u062A\u0628\u0627\u0631 \u0646\u0634\u0633\u062A \u06A9\u0627\u0631\u0628\u0631\u06CC \u0645\u0646\u0642\u0636\u06CC \u0634\u062F\u0647 \u0627\u0633\u062A."
+    });
+  }
+  const user = result.decoded;
+  if (!isAuthorizedForMaintenance(user)) {
+    return res.status(403).json({
+      success: false,
+      message: "\u0645\u062F\u06CC\u0631\u06CC\u062A \u062D\u0627\u0644\u062A \u062A\u0639\u0645\u06CC\u0631 \u0633\u0627\u06CC\u062A \u0645\u0646\u062D\u0635\u0631\u0627\u064B \u062F\u0631 \u0627\u062E\u062A\u06CC\u0627\u0631 \u0645\u0633\u0626\u0648\u0644 \u0622\u0645\u0648\u0632\u0634 \u0648 \u0633\u0648\u067E\u0631 \u0627\u062F\u0645\u06CC\u0646 \u0627\u0633\u062A."
     });
   }
   req.monitoringUser = {
@@ -6513,32 +6922,83 @@ var init_serverBackupEngine = __esm({
 // src/lib/serverMaintenance.ts
 var serverMaintenance_exports = {};
 __export(serverMaintenance_exports, {
+  ensureMaintenanceLoadedFromDb: () => ensureMaintenanceLoadedFromDb,
   getMaintenanceState: () => getMaintenanceState,
   maintenanceMiddleware: () => maintenanceMiddleware,
   setMaintenanceState: () => setMaintenanceState
 });
-function persistState() {
+function persistDiskState() {
   try {
     import_fs5.default.writeFileSync(STATE_FILE_PATH, JSON.stringify(currentState, null, 2), "utf-8");
   } catch (e) {
-    console.warn("[Maintenance State Persist Warning]:", e);
+    console.error("[STORAGE_FAILURE][maintenance_disk_persist]", e);
   }
+}
+async function ensureMaintenanceLoadedFromDb(force = false) {
+  if (!isMysqlConfigured) return { ...currentState };
+  const now = Date.now();
+  if (!force && now - lastDbHydrationAt < 2500) {
+    return { ...currentState };
+  }
+  lastDbHydrationAt = now;
+  try {
+    const doc = await MysqlRepository.getDocument("system_settings", "maintenance_mode");
+    if (doc && typeof doc.enabled === "boolean") {
+      const dbVer = Number(doc.version) || 1;
+      const localVer = Number(currentState.version) || 1;
+      const dbTime = doc.updated_at ? new Date(doc.updated_at).getTime() : 0;
+      const localTime = currentState.updated_at ? new Date(currentState.updated_at).getTime() : 0;
+      if (dbVer > localVer || dbVer === localVer && dbTime > localTime) {
+        currentState = {
+          id: "maintenance_mode",
+          enabled: Boolean(doc.enabled),
+          message: doc.message || currentState.message,
+          enabledAt: doc.enabledAt ?? null,
+          enabledBy: doc.enabledBy ?? null,
+          estimatedDuration: doc.estimatedDuration ?? "\u06F1\u06F5 \u062F\u0642\u06CC\u0642\u0647",
+          version: dbVer,
+          updated_at: doc.updated_at || (/* @__PURE__ */ new Date()).toISOString()
+        };
+        persistDiskState();
+      }
+    }
+  } catch (err) {
+    console.error("[STORAGE_FAILURE][maintenance_db_load]", err?.message || err);
+  }
+  return { ...currentState };
 }
 function getMaintenanceState() {
   return { ...currentState };
 }
-function setMaintenanceState(enabled, operator, customMessage, estimatedDuration) {
-  currentState.enabled = enabled;
-  if (enabled) {
-    currentState.enabledAt = (/* @__PURE__ */ new Date()).toISOString();
-    currentState.enabledBy = operator;
-    if (customMessage) currentState.message = customMessage;
-    if (estimatedDuration) currentState.estimatedDuration = estimatedDuration;
-  } else {
-    currentState.enabledAt = null;
-    currentState.enabledBy = null;
+async function setMaintenanceState(enabled, operator, customMessage, estimatedDuration) {
+  await ensureMaintenanceLoadedFromDb(true);
+  const nextVersion = (Number(currentState.version) || 0) + 1;
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const nextState = {
+    id: "maintenance_mode",
+    enabled: Boolean(enabled),
+    message: typeof customMessage === "string" && customMessage.trim() ? customMessage.trim() : currentState.message,
+    estimatedDuration: typeof estimatedDuration === "string" && estimatedDuration.trim() ? estimatedDuration.trim() : enabled ? currentState.estimatedDuration || "\u06F1\u06F5 \u062F\u0642\u06CC\u0642\u0647" : currentState.estimatedDuration,
+    enabledAt: enabled ? nowIso : null,
+    enabledBy: enabled ? operator : null,
+    version: nextVersion,
+    updated_at: nowIso
+  };
+  currentState = nextState;
+  persistDiskState();
+  if (isMysqlConfigured) {
+    try {
+      await MysqlRepository.saveDocument("system_settings", "maintenance_mode", nextState);
+      console.log("[STORAGE_SUCCESS][system_settings/maintenance_mode]", `v${nextState.version}`, `enabled=${nextState.enabled}`);
+    } catch (err) {
+      console.error("[STORAGE_FAILURE][system_settings/maintenance_mode]", err?.message || err);
+    }
   }
-  persistState();
+  try {
+    notifyRealtimeChange("system_settings", "maintenance_mode", "upsert");
+  } catch (e) {
+    console.error("[STORAGE_FAILURE][maintenance_notify]", e?.message || e);
+  }
   return { ...currentState };
 }
 function maintenanceMiddleware(req, res, next) {
@@ -6546,13 +7006,13 @@ function maintenanceMiddleware(req, res, next) {
     return next();
   }
   const p = req.path || "";
-  if (p === "/health" || p === "/api/healthz" || p === "/api/version" || p.startsWith("/api/monitor") || p.startsWith("/api/auth/login") || p.startsWith("/api/auth/me") || !p.startsWith("/api/")) {
+  if (p === "/health" || p === "/api/healthz" || p === "/api/version" || p === "/api/system/maintenance-status" || p.startsWith("/api/monitor/maintenance") || p.startsWith("/api/auth/login") || p.startsWith("/api/auth/me") || p.startsWith("/api/auth/logout") || p.startsWith("/api/data/changes") || !p.startsWith("/api/")) {
     return next();
   }
   const token = extractMonitoringToken(req);
   if (token) {
     const verification = verifyAccessToken2(token);
-    if (verification.valid && verification.decoded && isAuthorizedForMonitoring(verification.decoded)) {
+    if (verification.valid && verification.decoded && isAuthorizedForMaintenance(verification.decoded)) {
       return next();
     }
   }
@@ -6561,24 +7021,31 @@ function maintenanceMiddleware(req, res, next) {
     maintenance: true,
     message: currentState.message,
     estimatedDuration: currentState.estimatedDuration,
-    enabledAt: currentState.enabledAt
+    enabledAt: currentState.enabledAt,
+    version: currentState.version
   });
 }
-var import_fs5, import_path5, STATE_FILE_PATH, currentState;
+var import_fs5, import_path5, STATE_FILE_PATH, currentState, lastDbHydrationAt;
 var init_serverMaintenance = __esm({
   "src/lib/serverMaintenance.ts"() {
     import_fs5 = __toESM(require("fs"), 1);
     import_path5 = __toESM(require("path"), 1);
     init_monitoringAccess();
     init_serverAuth();
+    init_databaseAbstraction();
+    init_serverDataApi();
     STATE_FILE_PATH = import_path5.default.join(process.cwd(), "data", "maintenance_state.json");
     currentState = {
+      id: "maintenance_mode",
       enabled: false,
-      message: "\u0633\u0627\u0645\u0627\u0646\u0647 \u062F\u0631 \u062D\u0627\u0644 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06CC \u0648 \u067E\u0634\u062A\u06CC\u0628\u0627\u0646\u200C\u06AF\u06CC\u0631\u06CC \u062F\u0648\u0631\u0647\u200C\u0627\u06CC \u0645\u06CC\u200C\u0628\u0627\u0634\u062F. \u0644\u0637\u0641\u0627\u064B \u062F\u0642\u0627\u06CC\u0642\u06CC \u062F\u06CC\u06AF\u0631 \u0645\u0631\u0627\u062C\u0639\u0647 \u0641\u0631\u0645\u0627\u06CC\u06CC\u062F.",
+      message: "\u0633\u0627\u0645\u0627\u0646\u0647 \u062F\u0631 \u062D\u0627\u0644 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06CC \u0648 \u0646\u06AF\u0647\u062F\u0627\u0631\u06CC \u0641\u0646\u06CC \u0645\u06CC\u200C\u0628\u0627\u0634\u062F. \u0644\u0637\u0641\u0627\u064B \u062F\u0642\u0627\u06CC\u0642\u06CC \u062F\u06CC\u06AF\u0631 \u0645\u0631\u0627\u062C\u0639\u0647 \u0641\u0631\u0645\u0627\u06CC\u06CC\u062F.",
       enabledAt: null,
       enabledBy: null,
-      estimatedDuration: "\u06F1\u06F5 \u062F\u0642\u06CC\u0642\u0647"
+      estimatedDuration: "\u06F1\u06F5 \u062F\u0642\u06CC\u0642\u0647",
+      version: 1,
+      updated_at: (/* @__PURE__ */ new Date()).toISOString()
     };
+    lastDbHydrationAt = 0;
     try {
       const dataDir = import_path5.default.join(process.cwd(), "data");
       if (!import_fs5.default.existsSync(dataDir)) {
@@ -6588,7 +7055,12 @@ var init_serverMaintenance = __esm({
         const raw = import_fs5.default.readFileSync(STATE_FILE_PATH, "utf-8");
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed.enabled === "boolean") {
-          currentState = { ...currentState, ...parsed };
+          currentState = {
+            ...currentState,
+            ...parsed,
+            version: Number(parsed.version) || 1,
+            updated_at: parsed.updated_at || (/* @__PURE__ */ new Date()).toISOString()
+          };
         }
       }
     } catch (e) {
@@ -12365,8 +12837,8 @@ var CounselingGradeSchema = import_zod19.z.object({
   courseTitle: import_zod19.z.string().min(1, "\u0639\u0646\u0648\u0627\u0646 \u06A9\u0644\u0627\u0633 \u0645\u0634\u0627\u0648\u0631\u0647 \u0627\u0644\u0632\u0627\u0645\u06CC \u0627\u0633\u062A."),
   sessionDate: import_zod19.z.string().min(1, "\u062A\u0627\u0631\u06CC\u062E \u062C\u0644\u0633\u0647 \u0627\u0644\u0632\u0627\u0645\u06CC \u0627\u0633\u062A."),
   sessionNumber: import_zod19.z.union([import_zod19.z.number(), import_zod19.z.string()]).optional(),
-  participationScore: import_zod19.z.enum(["\u0627\u0644\u0641", "\u0628", "\u062C", "\u062F", "\u063A\u06CC\u0628\u062A"]).default("\u0627\u0644\u0641"),
-  researchScore: import_zod19.z.enum(["\u0627\u0644\u0641", "\u0628", "\u062C", "\u062F", "\u063A\u06CC\u0628\u062A"]).default("\u0627\u0644\u0641"),
+  participationScore: import_zod19.z.enum(["\u0627\u0644\u0641", "\u0628", "\u062C", "\u062F", "\u063A\u06CC\u0628\u062A", "\u0639\u062F\u0645 \u0627\u0646\u062C\u0627\u0645 \u062A\u06A9\u0644\u06CC\u0641", ""]).optional(),
+  researchScore: import_zod19.z.enum(["\u0627\u0644\u0641", "\u0628", "\u062C", "\u062F", "\u063A\u06CC\u0628\u062A", "\u0639\u062F\u0645 \u0627\u0646\u062C\u0627\u0645 \u062A\u06A9\u0644\u06CC\u0641", ""]).optional(),
   counselorFeedback: import_zod19.z.string().optional()
 });
 var CounselingService = class {
@@ -12406,8 +12878,8 @@ var CounselingService = class {
       courseTitle: valid.courseTitle.trim(),
       sessionDate: valid.sessionDate,
       sessionNumber: valid.sessionNumber,
-      participationScore: valid.participationScore,
-      researchScore: valid.researchScore,
+      participationScore: valid.participationScore || void 0,
+      researchScore: valid.researchScore || void 0,
       counselorFeedback: valid.counselorFeedback,
       createdAt: rawData?.createdAt || nowIso,
       createdByName: callerUser?.username || "\u0627\u0633\u062A\u0627\u062F \u0645\u0634\u0627\u0648\u0631",
@@ -12422,7 +12894,7 @@ var CounselingService = class {
       action: valid.id ? "UPDATE_COUNSELING_GRADE" : "CREATE_COUNSELING_GRADE",
       entityType: "counseling_grade",
       entityId: id,
-      description: `\u062B\u0628\u062A \u0646\u0645\u0631\u0647 \u0645\u0634\u0627\u0648\u0631\u0647 \u0628\u0631\u0627\u06CC \u0637\u0644\u0628\u0647 ${record.studentName} \u062F\u0631 \u062F\u0631\u0633 ${record.courseTitle} (\u0645\u0634\u0627\u0631\u06A9\u062A: ${record.participationScore}\u060C \u067E\u0698\u0648\u0647\u0634: ${record.researchScore})`
+      description: `\u062B\u0628\u062A \u0646\u0645\u0631\u0647 \u0645\u0634\u0627\u0648\u0631\u0647 \u0628\u0631\u0627\u06CC \u0637\u0644\u0628\u0647 ${record.studentName} \u062F\u0631 \u062F\u0631\u0633 ${record.courseTitle} (\u0645\u0634\u0627\u0631\u06A9\u062A: ${record.participationScore || "\u062B\u0628\u062A\u200C\u0646\u0634\u062F\u0647"}\u060C \u067E\u0698\u0648\u0647\u0634: ${record.researchScore || "\u062B\u0628\u062A\u200C\u0646\u0634\u062F\u0647"})`
     });
     return record;
   }
@@ -13231,6 +13703,148 @@ router21.get("/db-status", async (_req, res) => {
     engine: "MySQL"
   });
 });
+router21.get("/maintenance-status", async (_req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  try {
+    const { ensureMaintenanceLoadedFromDb: ensureMaintenanceLoadedFromDb2 } = await Promise.resolve().then(() => (init_serverMaintenance(), serverMaintenance_exports));
+    const state = await ensureMaintenanceLoadedFromDb2();
+    return res.json({
+      success: true,
+      enabled: Boolean(state.enabled),
+      message: state.message,
+      estimatedDuration: state.estimatedDuration,
+      enabledAt: state.enabledAt,
+      enabledBy: state.enabledBy,
+      version: state.version || 1,
+      updated_at: state.updated_at
+    });
+  } catch (err) {
+    console.error("[STORAGE_FAILURE][maintenance-status]", err?.message || err);
+    return res.status(500).json({ success: false, message: err?.message || "\u062E\u0637\u0627 \u062F\u0631 \u0628\u0631\u0631\u0633\u06CC \u0648\u0636\u0639\u06CC\u062A \u062A\u0639\u0645\u06CC\u0631 \u0633\u0627\u06CC\u062A" });
+  }
+});
+function doesAnnouncementMatchUserAudience(announcement, user) {
+  const audience = String(announcement?.targetAudience || "all");
+  if (audience === "all") return true;
+  if (!user) return false;
+  const role = String(user.role || "");
+  const level = Number(user.level) || 0;
+  if (audience === "students") {
+    return (level === 3 || role === "student" || role === "class_representative") && role !== "teacher";
+  }
+  if (audience === "teachers") {
+    return role === "teacher";
+  }
+  if (audience === "staff") {
+    return level === 1 || level === 2 || role === "super_admin" || role === "education_manager" || role === "education_officer" || role === "finance_manager" || role === "grade_mentor" || role === "research_manager";
+  }
+  return true;
+}
+router21.get("/announcements/active", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  try {
+    const token = extractToken2(req);
+    if (!token) {
+      return res.status(401).json({ success: false, message: "\u0627\u062D\u0631\u0627\u0632 \u0647\u0648\u06CC\u062A \u0627\u0644\u0632\u0627\u0645\u06CC \u0627\u0633\u062A." });
+    }
+    const verification = verifyAccessToken2(token);
+    if (!verification.valid || !verification.decoded) {
+      return res.status(401).json({ success: false, message: "\u0627\u0639\u062A\u0628\u0627\u0631 \u062C\u0644\u0633\u0647 \u06A9\u0627\u0631\u0628\u0631\u06CC \u0645\u0646\u0642\u0636\u06CC \u0634\u062F\u0647 \u0627\u0633\u062A." });
+    }
+    const user = verification.decoded;
+    const { serverQueryCollection: serverQueryCollection2 } = await Promise.resolve().then(() => (init_serverDataApi(), serverDataApi_exports));
+    const allAnnouncements = await serverQueryCollection2("announcements", user);
+    const activeAnnouncements = (allAnnouncements || []).filter((a) => a && a.isActive !== false && doesAnnouncementMatchUserAudience(a, user)).sort((a, b) => {
+      const prioWeight = (p) => p === "urgent" ? 3 : p === "important" ? 2 : 1;
+      const diff = prioWeight(b.priority) - prioWeight(a.priority);
+      if (diff !== 0) return diff;
+      return new Date(b.createdAt || b.updated_at || 0).getTime() - new Date(a.createdAt || a.updated_at || 0).getTime();
+    });
+    const userDismissals = await serverQueryCollection2("announcement_dismissals", user);
+    const candidates = [user.id, user.studentId, user.linkedStudentId, user.username].filter(Boolean).map((x) => String(x).trim().toLowerCase());
+    const dismissedIds = Array.from(
+      new Set(
+        (userDismissals || []).filter((d) => {
+          if (!d || !d.announcementId) return false;
+          const dU = String(d.userId || "").trim().toLowerCase();
+          const dS = String(d.studentId || "").trim().toLowerCase();
+          const dName = String(d.username || "").trim().toLowerCase();
+          return dU && candidates.includes(dU) || dS && candidates.includes(dS) || dName && candidates.includes(dName);
+        }).map((d) => String(d.announcementId))
+      )
+    );
+    return res.json({
+      success: true,
+      announcements: activeAnnouncements,
+      dismissedIds
+    });
+  } catch (err) {
+    console.error("[STORAGE_FAILURE][announcements/active]", err?.message || err);
+    return res.status(500).json({ success: false, message: err?.message || "\u062E\u0637\u0627 \u062F\u0631 \u0648\u0627\u06A9\u0634\u06CC \u0627\u0637\u0644\u0627\u0639\u06CC\u0647\u200C\u0647\u0627\u06CC \u0641\u0639\u0627\u0644" });
+  }
+});
+router21.post("/announcements/:id/dismiss", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  try {
+    const token = extractToken2(req);
+    if (!token) {
+      return res.status(401).json({ success: false, message: "\u0627\u062D\u0631\u0627\u0632 \u0647\u0648\u06CC\u062A \u0627\u0644\u0632\u0627\u0645\u06CC \u0627\u0633\u062A." });
+    }
+    const verification = verifyAccessToken2(token);
+    if (!verification.valid || !verification.decoded) {
+      return res.status(401).json({ success: false, message: "\u0627\u0639\u062A\u0628\u0627\u0631 \u062C\u0644\u0633\u0647 \u06A9\u0627\u0631\u0628\u0631\u06CC \u0645\u0646\u0642\u0636\u06CC \u0634\u062F\u0647 \u0627\u0633\u062A." });
+    }
+    const user = verification.decoded;
+    const announcementId = String(req.params.id || "").trim();
+    if (!announcementId) {
+      return res.status(400).json({ success: false, message: "\u0634\u0646\u0627\u0633\u0647 \u0627\u0637\u0644\u0627\u0639\u06CC\u0647 \u0646\u0627\u0645\u0639\u062A\u0628\u0631 \u0627\u0633\u062A." });
+    }
+    const userKeyRaw = user.studentId || user.linkedStudentId || user.id || user.username || "unknown";
+    const userKeyClean = String(userKeyRaw).trim().replace(/[^a-zA-Z0-9_-]/g, "_");
+    const dismissalId = `${announcementId}__${userKeyClean}`;
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    const { serverQueryCollection: serverQueryCollection2, serverSaveDoc: serverSaveDoc2 } = await Promise.resolve().then(() => (init_serverDataApi(), serverDataApi_exports));
+    const existingList = await serverQueryCollection2("announcement_dismissals", user);
+    const existingDoc = (existingList || []).find((d) => d.id === dismissalId);
+    const nextVersion = (Number(existingDoc?.version) || 0) + 1;
+    const payload = {
+      id: dismissalId,
+      announcementId,
+      userId: String(user.id || user.username || ""),
+      studentId: String(user.studentId || user.linkedStudentId || ""),
+      username: String(user.username || ""),
+      dismissedAt: nowIso,
+      updated_at: nowIso,
+      version: nextVersion
+    };
+    const saveRes = await serverSaveDoc2("announcement_dismissals", payload, user);
+    if (!saveRes.success) {
+      return res.status(500).json({ success: false, message: saveRes.error || "\u062E\u0637\u0627 \u062F\u0631 \u062B\u0628\u062A \u062F\u0627\u0626\u0645\u06CC \u0639\u062F\u0645 \u0646\u0645\u0627\u06CC\u0634 \u0627\u0637\u0644\u0627\u0639\u06CC\u0647" });
+    }
+    const updatedDismissals = await serverQueryCollection2("announcement_dismissals", user);
+    const candidates = [user.id, user.studentId, user.linkedStudentId, user.username].filter(Boolean).map((x) => String(x).trim().toLowerCase());
+    const dismissedIds = Array.from(
+      new Set(
+        (updatedDismissals || []).filter((d) => {
+          if (!d || !d.announcementId) return false;
+          const dU = String(d.userId || "").trim().toLowerCase();
+          const dS = String(d.studentId || "").trim().toLowerCase();
+          const dName = String(d.username || "").trim().toLowerCase();
+          return dU && candidates.includes(dU) || dS && candidates.includes(dS) || dName && candidates.includes(dName);
+        }).map((d) => String(d.announcementId))
+      )
+    );
+    console.log("[STORAGE_SUCCESS][announcement_dismissals]", dismissalId, `v${nextVersion}`);
+    return res.json({
+      success: true,
+      dismissal: payload,
+      dismissedIds
+    });
+  } catch (err) {
+    console.error("[STORAGE_FAILURE][announcements/dismiss]", err?.message || err);
+    return res.status(500).json({ success: false, message: err?.message || "\u062E\u0637\u0627 \u062F\u0631 \u062B\u0628\u062A \u0639\u062F\u0645 \u0646\u0645\u0627\u06CC\u0634 \u0627\u0637\u0644\u0627\u0639\u06CC\u0647" });
+  }
+});
 var systemRoutes_default = router21;
 
 // src/routes/auditRoutes.ts
@@ -13511,18 +14125,20 @@ router23.post("/purge", requireMonitoringAccess, async (_req, res) => {
     return res.status(500).json({ success: false, message: err?.message || "\u062E\u0637\u0627 \u062F\u0631 \u0627\u062C\u0631\u0627\u06CC \u067E\u0627\u06A9\u0633\u0627\u0632\u06CC" });
   }
 });
-router23.get("/maintenance", requireMonitoringAccess, async (_req, res) => {
-  const { getMaintenanceState: getMaintenanceState2 } = await Promise.resolve().then(() => (init_serverMaintenance(), serverMaintenance_exports));
-  return res.json({ success: true, state: getMaintenanceState2() });
+router23.get("/maintenance", requireMaintenanceAccess, async (_req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  const { ensureMaintenanceLoadedFromDb: ensureMaintenanceLoadedFromDb2 } = await Promise.resolve().then(() => (init_serverMaintenance(), serverMaintenance_exports));
+  const state = await ensureMaintenanceLoadedFromDb2(true);
+  return res.json({ success: true, state });
 });
-router23.post("/maintenance", requireMonitoringAccess, async (req, res) => {
+router23.post("/maintenance", requireMaintenanceAccess, async (req, res) => {
   try {
     const { enabled, message, estimatedDuration } = req.body || {};
     const { setMaintenanceState: setMaintenanceState2 } = await Promise.resolve().then(() => (init_serverMaintenance(), serverMaintenance_exports));
     const { logServerAudit: logServerAudit3 } = await Promise.resolve().then(() => (init_serverAuth(), serverAuth_exports));
-    const caller = req.monitoringCaller || {};
+    const caller = req.monitoringUser || {};
     const operatorName = caller.name || caller.username || "\u0645\u062F\u06CC\u0631 \u0633\u0627\u0645\u0627\u0646\u0647";
-    const newState = setMaintenanceState2(
+    const newState = await setMaintenanceState2(
       Boolean(enabled),
       operatorName,
       message,
@@ -13535,7 +14151,7 @@ router23.post("/maintenance", requireMonitoringAccess, async (req, res) => {
       action: enabled ? "MAINTENANCE_MODE_ACTIVATED" : "MAINTENANCE_MODE_DEACTIVATED",
       entityType: "system_settings",
       entityId: "maintenance_mode",
-      description: enabled ? `\u0641\u0639\u0627\u0644\u200C\u0633\u0627\u0632\u06CC \u062D\u0627\u0644\u062A \u062A\u0639\u0645\u06CC\u0631 \u0648 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06CC \u0633\u0627\u0645\u0627\u0646\u0647 \u062A\u0648\u0633\u0637 ${operatorName} (\u067E\u06CC\u0627\u0645: ${message || "\u067E\u06CC\u0634\u200C\u0641\u0631\u0636"})` : `\u063A\u06CC\u0631\u0641\u0639\u0627\u0644\u200C\u0633\u0627\u0632\u06CC \u062D\u0627\u0644\u062A \u062A\u0639\u0645\u06CC\u0631 \u0648 \u0628\u0627\u0632\u06AF\u0634\u0627\u06CC\u06CC \u0633\u0627\u0645\u0627\u0646\u0647 \u062A\u0648\u0633\u0637 ${operatorName}`,
+      description: enabled ? `\u0641\u0639\u0627\u0644\u200C\u0633\u0627\u0632\u06CC \u062D\u0627\u0644\u062A \u062A\u0639\u0645\u06CC\u0631 \u0648 \u0646\u06AF\u0647\u062F\u0627\u0631\u06CC \u0633\u0627\u0645\u0627\u0646\u0647 \u062A\u0648\u0633\u0637 ${operatorName} (\u067E\u06CC\u0627\u0645: ${message || "\u067E\u06CC\u0634\u200C\u0641\u0631\u0636"})` : `\u063A\u06CC\u0631\u0641\u0639\u0627\u0644\u200C\u0633\u0627\u0632\u06CC \u062D\u0627\u0644\u062A \u062A\u0639\u0645\u06CC\u0631 \u0648 \u0628\u0627\u0632\u06AF\u0634\u0627\u06CC\u06CC \u0633\u0627\u0645\u0627\u0646\u0647 \u062A\u0648\u0633\u0637 ${operatorName}`,
       newState
     });
     return res.json({
@@ -13544,6 +14160,7 @@ router23.post("/maintenance", requireMonitoringAccess, async (req, res) => {
       state: newState
     });
   } catch (err) {
+    console.error("[STORAGE_FAILURE][monitor/maintenance]", err?.message || err);
     return res.status(500).json({ success: false, message: err?.message || "\u062E\u0637\u0627 \u062F\u0631 \u062A\u063A\u06CC\u06CC\u0631 \u062D\u0627\u0644\u062A \u062A\u0639\u0645\u06CC\u0631" });
   }
 });
@@ -13627,7 +14244,7 @@ init_systemHealthMonitor();
 // src/lib/buildInfo.ts
 var BUILD_INFO = {
   "version": "v1.0.2-secure",
-  "buildTime": "2026-11-14T15:20:12.859Z",
+  "buildTime": "2026-11-21T18:12:07.136Z",
   "features": [
     "version-endpoint",
     "hardcoded-secrets-removed"

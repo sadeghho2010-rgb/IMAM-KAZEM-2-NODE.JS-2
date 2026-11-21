@@ -45,11 +45,13 @@ import {
   ArrowRight,
   Send,
   Eye,
-  CheckSquare
+  CheckSquare,
+  FileSpreadsheet
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { ShamsiDatePicker } from './ShamsiDatePicker';
+import CounselingReportsTab from './counseling/CounselingReportsTab';
 import { exportElementToPdf } from '../lib/pdfExport';
 import { 
   getTodayShamsi, 
@@ -67,8 +69,20 @@ const SCORE_BADGES: Record<CounselingScore, { label: string; badgeClass: string;
   'ب': { label: 'ب (خوب)', badgeClass: 'bg-blue-100 text-blue-800 border-blue-300 font-black', bg: 'bg-blue-50' },
   'ج': { label: 'ج (متوسط)', badgeClass: 'bg-amber-100 text-amber-800 border-amber-300 font-black', bg: 'bg-amber-50' },
   'د': { label: 'د (ضعیف - نیازمند پیگیری)', badgeClass: 'bg-rose-100 text-rose-800 border-rose-300 font-black', bg: 'bg-rose-50' },
-  'غیبت': { label: 'غیبت در جلسه', badgeClass: 'bg-slate-200 text-slate-700 border-slate-300 font-black', bg: 'bg-slate-100' }
+  'غیبت': { label: 'غیبت در جلسه', badgeClass: 'bg-slate-200 text-slate-700 border-slate-300 font-black', bg: 'bg-slate-100' },
+  'عدم انجام تکلیف': { label: 'عدم انجام تکلیف', badgeClass: 'bg-slate-200 text-slate-700 border-slate-300 font-black', bg: 'bg-slate-100' }
 };
+
+function getScoreBadgeInfo(score?: CounselingScore | '', isResearch = false): { text: string; badgeClass: string } {
+  if (!score) {
+    return { text: '—', badgeClass: 'bg-slate-50 text-slate-400 border-slate-200 font-bold' };
+  }
+  const normalized: CounselingScore = isResearch && score === 'غیبت' ? 'عدم انجام تکلیف' : score;
+  return {
+    text: normalized,
+    badgeClass: SCORE_BADGES[normalized]?.badgeClass || 'bg-slate-100 text-slate-700 border-slate-200 font-bold'
+  };
+}
 
 function isMatchingGrade(itemGrade: string | undefined | null, targetGrade: string): boolean {
   if (!targetGrade || targetGrade === 'all') return true;
@@ -103,8 +117,8 @@ interface StudentBatchRow {
   studentId: string;
   studentName: string;
   grade: string;
-  participationScore: CounselingScore;
-  researchScore: CounselingScore;
+  participationScore: CounselingScore | '';
+  researchScore: CounselingScore | '';
   counselorFeedback: string;
 }
 
@@ -138,7 +152,7 @@ export default function CounselingClasses() {
   const [loading, setLoading] = useState(true);
 
   // Active View Tab
-  const [activeView, setActiveView] = useState<'status_monitoring' | 'professor_commitment' | 'sessions' | 'student_summary'>('status_monitoring');
+  const [activeView, setActiveView] = useState<'status_monitoring' | 'professor_commitment' | 'sessions' | 'student_summary' | 'reports_export'>('status_monitoring');
 
   // Filters for Sessions view
   const [searchQuery, setSearchQuery] = useState('');
@@ -446,8 +460,8 @@ export default function CounselingClasses() {
           courseTitle: courseTitle,
           sessionDate: sessionDate,
           sessionNumber: batchSessionNumber.trim() || 'جلسه ۱',
-          participationScore: row.participationScore,
-          researchScore: row.researchScore,
+          participationScore: row.participationScore ? (row.participationScore as CounselingScore) : undefined,
+          researchScore: row.researchScore ? (row.researchScore as CounselingScore) : undefined,
           counselorFeedback: row.counselorFeedback.trim() || (batchSessionTopic ? `موضوع: ${batchSessionTopic}` : ''),
           createdByName: currentUserName,
           createdByRole: currentUserRole,
@@ -856,6 +870,12 @@ export default function CounselingClasses() {
               icon: <BarChart2 size={14} />,
               tone: 'amber',
             },
+            {
+              id: 'reports_export',
+              label: 'گزارش و اکسل',
+              icon: <FileSpreadsheet size={14} />,
+              tone: 'emerald',
+            },
           ]}
         />
       ) : (
@@ -928,6 +948,19 @@ export default function CounselingClasses() {
           >
             <BarChart2 size={16} />
             <span>کارنامه و خلاصه عملکرد طلاب</span>
+          </button>
+
+          <button
+            onClick={() => setActiveView('reports_export')}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer",
+              activeView === 'reports_export'
+                ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/20"
+                : "bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50"
+            )}
+          >
+            <FileSpreadsheet size={16} />
+            <span>گزارش آماری و خروجی اکسل</span>
           </button>
         </div>
       )}
@@ -1685,11 +1718,11 @@ export default function CounselingClasses() {
                         {g.sessionDate} · {g.sessionNumber || 'جلسه ۱'}
                       </span>
                       <div className="flex items-center gap-1.5">
-                        <span className={cn("px-2 py-0.5 rounded-lg text-[10px] font-black border", SCORE_BADGES[g.participationScore]?.badgeClass)}>
-                          مشارکت: {g.participationScore}
+                        <span className={cn("px-2 py-0.5 rounded-lg text-[10px] border", getScoreBadgeInfo(g.participationScore, false).badgeClass)}>
+                          مشارکت: {getScoreBadgeInfo(g.participationScore, false).text}
                         </span>
-                        <span className={cn("px-2 py-0.5 rounded-lg text-[10px] font-black border", SCORE_BADGES[g.researchScore]?.badgeClass)}>
-                          پژوهش: {g.researchScore}
+                        <span className={cn("px-2 py-0.5 rounded-lg text-[10px] border", getScoreBadgeInfo(g.researchScore, true).badgeClass)}>
+                          پژوهش: {getScoreBadgeInfo(g.researchScore, true).text}
                         </span>
                       </div>
                     </div>
@@ -1742,13 +1775,13 @@ export default function CounselingClasses() {
                             {g.sessionDate} • {g.sessionNumber || 'جلسه ۱'}
                           </td>
                           <td className="p-3.5 text-center">
-                            <span className={cn("px-2.5 py-0.5 rounded-full text-[10px] font-black border", SCORE_BADGES[g.participationScore]?.badgeClass)}>
-                              {g.participationScore}
+                            <span className={cn("px-2.5 py-0.5 rounded-full text-[10px] border", getScoreBadgeInfo(g.participationScore, false).badgeClass)}>
+                              {getScoreBadgeInfo(g.participationScore, false).text}
                             </span>
                           </td>
                           <td className="p-3.5 text-center">
-                            <span className={cn("px-2.5 py-0.5 rounded-full text-[10px] font-black border", SCORE_BADGES[g.researchScore]?.badgeClass)}>
-                              {g.researchScore}
+                            <span className={cn("px-2.5 py-0.5 rounded-full text-[10px] border", getScoreBadgeInfo(g.researchScore, true).badgeClass)}>
+                              {getScoreBadgeInfo(g.researchScore, true).text}
                             </span>
                           </td>
                           <td className="p-3.5 text-slate-500 text-[11px] max-w-xs truncate">
@@ -1992,11 +2025,11 @@ export default function CounselingClasses() {
                             <div className="flex items-center justify-between gap-2 text-[11px]">
                               <span className="text-slate-600 truncate">استاد: {g.counselorTeacherName}</span>
                               <div className="flex items-center gap-1 shrink-0">
-                                <span className={cn("px-1.5 py-0.5 rounded text-[10px] border font-black", SCORE_BADGES[g.participationScore]?.badgeClass)}>
-                                  مشارکت: {g.participationScore}
+                                <span className={cn("px-1.5 py-0.5 rounded text-[10px] border", getScoreBadgeInfo(g.participationScore, false).badgeClass)}>
+                                  مشارکت: {getScoreBadgeInfo(g.participationScore, false).text}
                                 </span>
-                                <span className={cn("px-1.5 py-0.5 rounded text-[10px] border font-black", SCORE_BADGES[g.researchScore]?.badgeClass)}>
-                                  پژوهش: {g.researchScore}
+                                <span className={cn("px-1.5 py-0.5 rounded text-[10px] border", getScoreBadgeInfo(g.researchScore, true).badgeClass)}>
+                                  پژوهش: {getScoreBadgeInfo(g.researchScore, true).text}
                                 </span>
                               </div>
                             </div>
@@ -2026,13 +2059,13 @@ export default function CounselingClasses() {
                                 <td className="p-3 text-amber-900 font-bold">{g.courseTitle}</td>
                                 <td className="p-3 text-slate-600">{g.counselorTeacherName}</td>
                                 <td className="p-3 text-center">
-                                  <span className={cn("px-2 py-0.5 rounded text-[10px] border font-black", SCORE_BADGES[g.participationScore]?.badgeClass)}>
-                                    {g.participationScore}
+                                  <span className={cn("px-2 py-0.5 rounded text-[10px] border", getScoreBadgeInfo(g.participationScore, false).badgeClass)}>
+                                    {getScoreBadgeInfo(g.participationScore, false).text}
                                   </span>
                                 </td>
                                 <td className="p-3 text-center">
-                                  <span className={cn("px-2 py-0.5 rounded text-[10px] border font-black", SCORE_BADGES[g.researchScore]?.badgeClass)}>
-                                    {g.researchScore}
+                                  <span className={cn("px-2 py-0.5 rounded text-[10px] border", getScoreBadgeInfo(g.researchScore, true).badgeClass)}>
+                                    {getScoreBadgeInfo(g.researchScore, true).text}
                                   </span>
                                 </td>
                                 <td className="p-3 text-slate-600 text-[11px]">{g.counselorFeedback || '—'}</td>
@@ -2048,6 +2081,18 @@ export default function CounselingClasses() {
             )}
           </div>
         </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 5: REPORTS & EXCEL EXPORTS (گزارش آماری و خروجی اکسل مالی و آموزشی)   */}
+      {/* ========================================================================= */}
+      {activeView === 'reports_export' && (
+        <CounselingReportsTab
+          grades={grades}
+          students={students}
+          counselingClasses={counselingClassesList}
+          isAdminMobile={isAdminMobile}
+        />
       )}
 
       {/* ========================================================================= */}
@@ -2202,11 +2247,12 @@ export default function CounselingClasses() {
                               <select
                                 value={row.participationScore}
                                 onChange={(e) => {
-                                  const val = e.target.value as CounselingScore;
+                                  const val = e.target.value as CounselingScore | '';
                                   setBatchStudentsList(prev => prev.map((r, i) => i === idx ? { ...r, participationScore: val } : r));
                                 }}
                                 className="w-full min-h-[38px] px-2 py-1 bg-white border border-slate-200 rounded-lg font-bold text-xs"
                               >
+                                <option value="">— (خالی)</option>
                                 <option value="الف">الف (عالی)</option>
                                 <option value="ب">ب (خوب)</option>
                                 <option value="ج">ج (متوسط)</option>
@@ -2219,16 +2265,17 @@ export default function CounselingClasses() {
                               <select
                                 value={row.researchScore}
                                 onChange={(e) => {
-                                  const val = e.target.value as CounselingScore;
+                                  const val = e.target.value as CounselingScore | '';
                                   setBatchStudentsList(prev => prev.map((r, i) => i === idx ? { ...r, researchScore: val } : r));
                                 }}
                                 className="w-full min-h-[38px] px-2 py-1 bg-white border border-slate-200 rounded-lg font-bold text-xs"
                               >
+                                <option value="">— (خالی)</option>
                                 <option value="الف">الف (عالی)</option>
                                 <option value="ب">ب (خوب)</option>
                                 <option value="ج">ج (متوسط)</option>
                                 <option value="د">د (ضعیف)</option>
-                                <option value="غیبت">غیبت</option>
+                                <option value="عدم انجام تکلیف">عدم انجام تکلیف</option>
                               </select>
                             </div>
                           </div>
@@ -2270,11 +2317,12 @@ export default function CounselingClasses() {
                                 <select
                                   value={row.participationScore}
                                   onChange={(e) => {
-                                    const val = e.target.value as CounselingScore;
+                                    const val = e.target.value as CounselingScore | '';
                                     setBatchStudentsList(prev => prev.map((r, i) => i === idx ? { ...r, participationScore: val } : r));
                                   }}
                                   className="px-2 py-1 bg-white border border-slate-200 rounded-lg font-bold text-xs"
                                 >
+                                  <option value="">— (خالی)</option>
                                   <option value="الف">الف (عالی)</option>
                                   <option value="ب">ب (خوب)</option>
                                   <option value="ج">ج (متوسط)</option>
@@ -2286,16 +2334,17 @@ export default function CounselingClasses() {
                                 <select
                                   value={row.researchScore}
                                   onChange={(e) => {
-                                    const val = e.target.value as CounselingScore;
+                                    const val = e.target.value as CounselingScore | '';
                                     setBatchStudentsList(prev => prev.map((r, i) => i === idx ? { ...r, researchScore: val } : r));
                                   }}
                                   className="px-2 py-1 bg-white border border-slate-200 rounded-lg font-bold text-xs"
                                 >
+                                  <option value="">— (خالی)</option>
                                   <option value="الف">الف (عالی)</option>
                                   <option value="ب">ب (خوب)</option>
                                   <option value="ج">ج (متوسط)</option>
                                   <option value="د">د (ضعیف)</option>
-                                  <option value="غیبت">غیبت</option>
+                                  <option value="عدم انجام تکلیف">عدم انجام تکلیف</option>
                                 </select>
                               </td>
                               <td className="p-2.5">
@@ -2398,8 +2447,8 @@ export default function CounselingClasses() {
                       </div>
 
                       <div className="flex items-center gap-1.5 font-bold">
-                        <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded text-[10px]">مشارکت: {g.participationScore}</span>
-                        <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded text-[10px]">پژوهش: {g.researchScore}</span>
+                        <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded text-[10px]">مشارکت: {getScoreBadgeInfo(g.participationScore, false).text}</span>
+                        <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded text-[10px]">پژوهش: {getScoreBadgeInfo(g.researchScore, true).text}</span>
                       </div>
                     </div>
                   ))
@@ -2489,13 +2538,13 @@ export default function CounselingClasses() {
                                   <td className="p-2.5 font-bold text-slate-900">{sg.studentName}</td>
                                   <td className="p-2.5 text-slate-500">{sg.grade || 'پایه ۷'}</td>
                                   <td className="p-2.5 text-center">
-                                    <span className={cn("px-2 py-0.5 rounded text-[10px] border font-black", SCORE_BADGES[sg.participationScore]?.badgeClass)}>
-                                      {sg.participationScore}
+                                    <span className={cn("px-2 py-0.5 rounded text-[10px] border", getScoreBadgeInfo(sg.participationScore, false).badgeClass)}>
+                                      {getScoreBadgeInfo(sg.participationScore, false).text}
                                     </span>
                                   </td>
                                   <td className="p-2.5 text-center">
-                                    <span className={cn("px-2 py-0.5 rounded text-[10px] border font-black", SCORE_BADGES[sg.researchScore]?.badgeClass)}>
-                                      {sg.researchScore}
+                                    <span className={cn("px-2 py-0.5 rounded text-[10px] border", getScoreBadgeInfo(sg.researchScore, true).badgeClass)}>
+                                      {getScoreBadgeInfo(sg.researchScore, true).text}
                                     </span>
                                   </td>
                                   <td className="p-2.5 text-slate-600 text-[11px]">{sg.counselorFeedback || '—'}</td>
@@ -2589,13 +2638,13 @@ export default function CounselingClasses() {
                             <td className="p-3 font-bold text-amber-900">{g.courseTitle}</td>
                             <td className="p-3 text-slate-600">{g.counselorTeacherName}</td>
                             <td className="p-3 text-center">
-                              <span className={cn("px-2 py-0.5 rounded text-[10px] border font-black", SCORE_BADGES[g.participationScore]?.badgeClass)}>
-                                {g.participationScore}
+                              <span className={cn("px-2 py-0.5 rounded text-[10px] border", getScoreBadgeInfo(g.participationScore, false).badgeClass)}>
+                                {getScoreBadgeInfo(g.participationScore, false).text}
                               </span>
                             </td>
                             <td className="p-3 text-center">
-                              <span className={cn("px-2 py-0.5 rounded text-[10px] border font-black", SCORE_BADGES[g.researchScore]?.badgeClass)}>
-                                {g.researchScore}
+                              <span className={cn("px-2 py-0.5 rounded text-[10px] border", getScoreBadgeInfo(g.researchScore, true).badgeClass)}>
+                                {getScoreBadgeInfo(g.researchScore, true).text}
                               </span>
                             </td>
                             <td className="p-3 text-slate-600 text-[11px]">{g.counselorFeedback || '—'}</td>
