@@ -418,21 +418,20 @@ export default function TeacherPortal() {
    * 2. Do NOT show unheld classes (no holidays, no future dates)
    * 3. The class of that same day (today) and 3 sessions before it
    */
-  const classSessionDates = useMemo(() => {
-    if (!activeCounselingCourse) return [];
+  const getHeldSessionsForProgram = useCallback((prog: Program | null | undefined) => {
+    if (!prog) return [];
 
-    const rawCourseDays = getProgramDays(activeCounselingCourse);
+    const rawCourseDays = getProgramDays(prog);
     const courseDays = (rawCourseDays && rawCourseDays.length > 0)
       ? rawCourseDays
-      : (Array.isArray(activeCounselingCourse.days) && activeCounselingCourse.days.length > 0)
-        ? activeCounselingCourse.days
-        : (activeCounselingCourse as any).day
-          ? [(activeCounselingCourse as any).day]
+      : (Array.isArray(prog.days) && prog.days.length > 0)
+        ? prog.days
+        : (prog as any).day
+          ? [(prog as any).day]
           : ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه'];
 
     const today = getTodayShamsi();
 
-    // Check if a date falls in holidays (official or school holidays)
     const isHolidayOnDate = (dateStr: string) => {
       return holidays.some(h => {
         if (h.startDate && h.endDate) {
@@ -487,7 +486,11 @@ export default function TeacherPortal() {
     }
 
     return sorted;
-  }, [activeCounselingCourse, holidays]);
+  }, [holidays]);
+
+  const classSessionDates = useMemo(() => {
+    return getHeldSessionsForProgram(activeCounselingCourse);
+  }, [activeCounselingCourse, getHeldSessionsForProgram]);
 
   // Default selected session date
   useEffect(() => {
@@ -504,38 +507,37 @@ export default function TeacherPortal() {
 
   /**
    * STRICT FILTER: Enrolled students of THIS class ONLY.
-   * Matches exclusively by explicit enrollments, course grade matching, or course title grade indicators.
-   * Never displays students from other grades or general school students.
+   * Shared by both the student evaluation list and class/session completion badges so they always stay 100% in sync.
    */
-  const enrolledStudents = useMemo(() => {
-    if (!activeCounselingCourse) return [];
+  const getEnrolledStudentsForProgram = useCallback((prog: Program | null | undefined): Student[] => {
+    if (!prog) return [];
 
     const activeStudents = students.filter(s => s.isActive !== false && (s as any).status !== 'deleted' && !(s as any).isDeleted && !(s as any).deletedAt);
 
     // 1. Direct enrollments or explicit studentIds for this specific counseling class
-    if (activeCounselingCourse.studentIds && activeCounselingCourse.studentIds.length > 0) {
-      const ids = new Set(activeCounselingCourse.studentIds);
-      const direct = activeStudents.filter(s => ids.has(s.id));
+    if (prog.studentIds && prog.studentIds.length > 0) {
+      const ids = new Set(prog.studentIds.map(id => String(id)));
+      const direct = activeStudents.filter(s => ids.has(String(s.id)));
       if (direct.length > 0) {
         return direct.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fa'));
       }
     }
 
-    const courseEnrollments = enrollments.filter(e => 
-      e.programId === activeCounselingCourse.id
+    const courseEnrollments = enrollments.filter(e =>
+      String(e.programId) === String(prog.id)
     );
     if (courseEnrollments.length > 0) {
-      const ids = new Set(courseEnrollments.map(e => e.studentId));
-      const direct = activeStudents.filter(s => ids.has(s.id));
+      const ids = new Set(courseEnrollments.map(e => String(e.studentId)));
+      const direct = activeStudents.filter(s => ids.has(String(s.id)));
       if (direct.length > 0) {
         return direct.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fa'));
       }
     }
 
     // 2. Grade-based strict filtering (e.g. all students of 'پایه ۷', 'پایه 7', 'پایه هفتم')
-    if (activeCounselingCourse.grade && activeCounselingCourse.grade !== 'عمومی' && activeCounselingCourse.grade !== 'همه') {
-      const gradeStudents = activeStudents.filter(s => 
-        isGradeMatch(s.grade, activeCounselingCourse.grade)
+    if (prog.grade && prog.grade !== 'عمومی' && prog.grade !== 'همه') {
+      const gradeStudents = activeStudents.filter(s =>
+        isGradeMatch(s.grade, prog.grade)
       );
       if (gradeStudents.length > 0) {
         return gradeStudents.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fa'));
@@ -543,7 +545,7 @@ export default function TeacherPortal() {
     }
 
     // 3. Extract grade from course title if title mentions "پایه ۷", "پایه ۸", etc.
-    const title = activeCounselingCourse.title || '';
+    const title = prog.title || '';
     const gradeMatches = [
       'پایه ۷', 'پایه ۸', 'پایه ۹', 'پایه ۱۰', 'پایه ۱', 'پایه ۲', 'پایه ۳', 'پایه ۴', 'پایه ۵', 'پایه ۶',
       'پایه 7', 'پایه 8', 'پایه 9', 'پایه 10', 'پایه 1', 'پایه 2', 'پایه 3', 'پایه 4', 'پایه 5', 'پایه 6',
@@ -560,7 +562,74 @@ export default function TeacherPortal() {
 
     // If no matching students found for this class, strictly return empty list
     return [];
-  }, [activeCounselingCourse, enrollments, students]);
+  }, [enrollments, students]);
+
+  const enrolledStudents = useMemo(() => {
+    return getEnrolledStudentsForProgram(activeCounselingCourse);
+  }, [activeCounselingCourse, getEnrolledStudentsForProgram]);
+
+  const evaluateSessionStatsForProgram = useCallback((
+    prog: Program | null | undefined,
+    progStudents: Student[],
+    sessionDateStr: string
+  ) => {
+    const totalCount = progStudents.length;
+    if (!prog || !sessionDateStr) {
+      return { gradedCount: 0, totalCount, isEvaluated: false, isComplete: false };
+    }
+
+    const normSessionDate = normalizeShamsiDateStr(sessionDateStr);
+    const enrolledIdSet = new Set(progStudents.map(s => String(s.id)));
+    const enrolledNameToId = new Map<string, string>();
+    progStudents.forEach(s => {
+      if (s.name) {
+        enrolledNameToId.set(s.name.trim(), String(s.id));
+      }
+    });
+
+    const gradedStudentIds = new Set<string>();
+    grades.forEach(g => {
+      if (normalizeShamsiDateStr(g.sessionDate) !== normSessionDate) return;
+
+      const courseMatches =
+        String(g.programId || '') === String(prog.id) ||
+        (Boolean(g.courseTitle) && g.courseTitle === prog.title) ||
+        !g.programId;
+      if (!courseMatches) return;
+
+      const hasEvaluation = Boolean(
+        g.participationScore ||
+        g.researchScore ||
+        (g.counselorFeedback && g.counselorFeedback.trim())
+      );
+      if (!hasEvaluation) return;
+
+      const gStudentIdStr = g.studentId != null ? String(g.studentId) : '';
+      if (gStudentIdStr && enrolledIdSet.has(gStudentIdStr)) {
+        gradedStudentIds.add(gStudentIdStr);
+        return;
+      }
+
+      const gNameKey = g.studentName ? g.studentName.trim() : '';
+      if (gNameKey && enrolledNameToId.has(gNameKey)) {
+        gradedStudentIds.add(enrolledNameToId.get(gNameKey)!);
+        return;
+      }
+
+      // If roster is empty but grades were saved explicitly for this program & date, still recognize them
+      if (totalCount === 0 && String(g.programId || '') === String(prog.id)) {
+        gradedStudentIds.add(gStudentIdStr || gNameKey || String(g.id));
+      }
+    });
+
+    const gradedCount = gradedStudentIds.size;
+    return {
+      gradedCount,
+      totalCount,
+      isEvaluated: gradedCount > 0,
+      isComplete: totalCount > 0 && gradedCount >= totalCount
+    };
+  }, [grades]);
 
   // Existing grades for the selected course and selected session date
   const sessionGradesMap = useMemo(() => {
@@ -589,100 +658,32 @@ export default function TeacherPortal() {
 
   // Grade completion status for each held session date (deduplicated per student & matched to active course)
   const sessionGradingStats = useMemo(() => {
-    const stats: Record<string, { gradedCount: number; totalCount: number; isComplete: boolean }> = {};
-    const totalCount = enrolledStudents.length;
-    const enrolledIdSet = new Set(enrolledStudents.map(s => s.id));
+    const stats: Record<string, { gradedCount: number; totalCount: number; isEvaluated: boolean; isComplete: boolean }> = {};
 
     classSessionDates.forEach(session => {
-      const gradedStudentIds = new Set<string>();
-      const normSessionDate = normalizeShamsiDateStr(session.date);
-      grades.forEach(g => {
-        if (
-          normalizeShamsiDateStr(g.sessionDate) === normSessionDate &&
-          enrolledIdSet.has(g.studentId) &&
-          (!activeCounselingCourse || g.programId === activeCounselingCourse.id || g.courseTitle === activeCounselingCourse.title || !g.programId)
-        ) {
-          if (g.participationScore || g.researchScore) {
-            gradedStudentIds.add(g.studentId);
-          }
-        }
-      });
-
-      const graded = gradedStudentIds.size;
-      stats[session.date] = {
-        gradedCount: graded,
-        totalCount,
-        isComplete: totalCount > 0 && graded >= totalCount
-      };
+      stats[session.date] = evaluateSessionStatsForProgram(
+        activeCounselingCourse,
+        enrolledStudents,
+        session.date
+      );
     });
 
     return stats;
-  }, [classSessionDates, enrolledStudents, grades, activeCounselingCourse]);
+  }, [classSessionDates, activeCounselingCourse, enrolledStudents, evaluateSessionStatsForProgram]);
 
   // Quick completion status per counseling class (whether its latest held session has evaluations recorded)
   const programEvaluationStatus = useMemo(() => {
-    const statusMap: Record<string, boolean> = {};
-    const today = getTodayShamsi();
-    const todayDate = shamsiToDate(today);
-    const pastDate = new Date(todayDate.getTime());
-    pastDate.setDate(pastDate.getDate() - 45);
-    const startDate = dateToShamsi(pastDate);
-    const allDays = generateShamsiDateRange(startDate, today);
-    const isHolidayOnDate = (dateStr: string) =>
-      holidays.some(h => (h.startDate && h.endDate ? dateStr >= h.startDate && dateStr <= h.endDate : (h as any).date === dateStr || h.startDate === dateStr));
-
-    const activeStudents = students.filter(s => s.isActive !== false && (s as any).status !== 'deleted' && !(s as any).isDeleted && !(s as any).deletedAt);
+    const statusMap: Record<string, { gradedCount: number; totalCount: number; isEvaluated: boolean; isComplete: boolean }> = {};
 
     counselingPrograms.forEach(prog => {
-      const rawDays = getProgramDays(prog);
-      const courseDays = rawDays && rawDays.length > 0
-        ? rawDays
-        : (Array.isArray(prog.days) && prog.days.length > 0)
-          ? prog.days
-          : (prog as any).day
-            ? [(prog as any).day]
-            : ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه'];
-
-      const held = allDays.filter(d => compareShamsi(d, today) <= 0 && courseDays.includes(getShamsiDayOfWeekName(d)) && !isHolidayOnDate(d));
-      const latestDate = held.length > 0 ? held[held.length - 1] : today;
-      const normLatest = normalizeShamsiDateStr(latestDate);
-
-      let progStudentIds: Set<string>;
-      if (prog.studentIds && prog.studentIds.length > 0) {
-        progStudentIds = new Set(prog.studentIds.filter(id => activeStudents.some(s => s.id === id)));
-      } else {
-        const directEnr = enrollments.filter(e => e.programId === prog.id);
-        if (directEnr.length > 0) {
-          progStudentIds = new Set(directEnr.map(e => e.studentId).filter(id => activeStudents.some(s => s.id === id)));
-        } else if (prog.grade && prog.grade !== 'عمومی' && prog.grade !== 'همه') {
-          progStudentIds = new Set(activeStudents.filter(s => isGradeMatch(s.grade, prog.grade)).map(s => s.id));
-        } else {
-          progStudentIds = new Set();
-        }
-      }
-
-      if (progStudentIds.size === 0) {
-        statusMap[prog.id] = false;
-        return;
-      }
-
-      const gradedIds = new Set<string>();
-      grades.forEach(g => {
-        if (
-          normalizeShamsiDateStr(g.sessionDate) === normLatest &&
-          progStudentIds.has(g.studentId) &&
-          (g.programId === prog.id || g.courseTitle === prog.title || !g.programId) &&
-          (g.participationScore || g.researchScore)
-        ) {
-          gradedIds.add(g.studentId);
-        }
-      });
-
-      statusMap[prog.id] = gradedIds.size >= progStudentIds.size;
+      const heldSessions = getHeldSessionsForProgram(prog);
+      const latestSessionDate = heldSessions.length > 0 ? heldSessions[0].date : getTodayShamsi();
+      const progStudents = getEnrolledStudentsForProgram(prog);
+      statusMap[prog.id] = evaluateSessionStatsForProgram(prog, progStudents, latestSessionDate);
     });
 
     return statusMap;
-  }, [counselingPrograms, holidays, students, enrollments, grades]);
+  }, [counselingPrograms, getHeldSessionsForProgram, getEnrolledStudentsForProgram, evaluateSessionStatsForProgram]);
 
   const getSessionRelativeLabel = (session: { date: string; isToday?: boolean }, idx: number) => {
     if (session.isToday) return 'کلاس همان روز (امروز)';
@@ -1173,7 +1174,8 @@ export default function TeacherPortal() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {counselingPrograms.map(prog => {
                         const isSelected = selectedCourseId === prog.id;
-                        const isClassEvaluated = Boolean(programEvaluationStatus[prog.id]);
+                        const classEvalStats = programEvaluationStatus[prog.id];
+                        const isClassEvaluated = Boolean(classEvalStats?.isEvaluated);
                         
                         return (
                           <button
@@ -1208,17 +1210,24 @@ export default function TeacherPortal() {
                                       ? "bg-white/20 text-white"
                                       : "bg-emerald-50 border border-emerald-200 text-emerald-700"
                                   )}
+                                  title="ارزیابی آخرین جلسه این کلاس ثبت شده است"
                                 >
                                   <span className="relative flex h-2.5 w-2.5 shrink-0">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                                    <span className={cn(
+                                      "animate-ping absolute inline-flex h-full w-full rounded-full opacity-75",
+                                      isSelected ? "bg-emerald-200" : "bg-emerald-400"
+                                    )} />
+                                    <span className={cn(
+                                      "relative inline-flex rounded-full h-2.5 w-2.5",
+                                      isSelected ? "bg-emerald-200" : "bg-emerald-500"
+                                    )} />
                                   </span>
                                   <span>ارزیابی ثبت شده</span>
                                 </span>
                               ) : (
                                 <span
                                   className="relative flex h-3 w-3 shrink-0"
-                                  title="ارزیابی آخرین جلسه این کلاس هنوز تکمیل نشده است"
+                                  title="ارزیابی آخرین جلسه این کلاس هنوز ثبت نشده است"
                                 >
                                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-80" />
                                   <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500 shadow-sm shadow-rose-500/40" />
@@ -1280,6 +1289,7 @@ export default function TeacherPortal() {
                           const stats = sessionGradingStats[session.date] || { 
                             gradedCount: 0, 
                             totalCount: enrolledStudents.length, 
+                            isEvaluated: false,
                             isComplete: false 
                           };
                           const isSelected = selectedSessionDate === session.date;
@@ -1294,7 +1304,7 @@ export default function TeacherPortal() {
                                 "p-3 rounded-2xl border text-right transition-all flex flex-col justify-between cursor-pointer shadow-2xs",
                                 isSelected 
                                   ? "bg-emerald-600 text-white border-emerald-700 shadow-md scale-102 ring-2 ring-emerald-300 font-black"
-                                  : stats.isComplete
+                                  : stats.isEvaluated
                                     ? "bg-white border-emerald-300 text-slate-800 hover:bg-emerald-50/70"
                                     : "bg-white border-rose-200/90 text-slate-800 hover:bg-rose-50/50"
                               )}
@@ -1310,10 +1320,13 @@ export default function TeacherPortal() {
                                 )}>
                                   {relLabel}
                                 </span>
-                                {stats.isComplete ? (
+                                {stats.isEvaluated ? (
                                   <span
                                     className="relative flex h-2.5 w-2.5 shrink-0"
-                                    title="ارزیابی این جلسه ثبت شده است"
+                                    title={stats.isComplete
+                                      ? "ارزیابی این جلسه به صورت کامل ثبت شده است"
+                                      : `ارزیابی این جلسه ثبت شده است (${toPersianDigits(stats.gradedCount)} از ${toPersianDigits(stats.totalCount)} طلبه)`
+                                    }
                                   >
                                     <span className={cn(
                                       "animate-ping absolute inline-flex h-full w-full rounded-full opacity-75",
@@ -1327,7 +1340,7 @@ export default function TeacherPortal() {
                                 ) : (
                                   <span
                                     className="relative flex h-3 w-3 shrink-0"
-                                    title={`ارزیابی این جلسه تکمیل نشده است (${toPersianDigits(Math.max(0, stats.totalCount - stats.gradedCount))} طلبه باقی‌مانده)`}
+                                    title="ارزیابی این جلسه هنوز ثبت نشده است"
                                   >
                                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-80" />
                                     <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500 shadow-sm shadow-rose-500/40" />
@@ -1342,11 +1355,11 @@ export default function TeacherPortal() {
                                 "text-[10px] mt-2 font-black pt-1.5 border-t flex items-center justify-between gap-1.5",
                                 isSelected 
                                   ? "border-white/20 text-emerald-100" 
-                                  : stats.isComplete 
+                                  : stats.isEvaluated 
                                     ? "border-emerald-100 text-emerald-700" 
                                     : "border-rose-100 text-slate-500"
                               )}>
-                                {stats.isComplete ? (
+                                {stats.isEvaluated ? (
                                   <span className="inline-flex items-center gap-1.5">
                                     <span className="relative flex h-2 w-2 shrink-0">
                                       <span className={cn(
@@ -1358,10 +1371,15 @@ export default function TeacherPortal() {
                                         isSelected ? "bg-emerald-200" : "bg-emerald-500"
                                       )} />
                                     </span>
-                                    <span>ارزیابی ثبت شده</span>
+                                    <span>
+                                      {stats.isComplete || stats.totalCount === 0
+                                        ? 'ارزیابی ثبت شده'
+                                        : `ارزیابی شده (${toPersianDigits(stats.gradedCount)}/${toPersianDigits(stats.totalCount)})`
+                                      }
+                                    </span>
                                   </span>
                                 ) : (
-                                  <span className="inline-flex items-center gap-1.5" title="تکمیل نشده">
+                                  <span className="inline-flex items-center gap-1.5" title="ارزیابی انجام نشده">
                                     <span className="relative flex h-2.5 w-2.5 shrink-0">
                                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-80" />
                                       <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500" />
