@@ -70,6 +70,11 @@ import {
   toEnglishDigits,
   getConsolidatedSessionLog
 } from '../lib/jalali';
+import {
+  resolveAttendanceRules,
+  classifyAttendanceRecord,
+  computeLateConvertedAbsences
+} from '../lib/attendanceRules';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   AttendanceStatus, 
@@ -155,8 +160,12 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     id: 'default_attendance_settings',
     representativeEditWindowDays: 7,
     unspecifiedCountAs: 'unspecified',
-    unexcusedWarningThreshold: 3
+    unexcusedWarningThreshold: 3,
+    minLateMinutes: 4,
+    maxLateAsAbsenceMinutes: 15,
+    latesPerAbsence: 3
   });
+  const attendanceRules = useMemo(() => resolveAttendanceRules(settings), [settings]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Active selections for Record tab
@@ -509,7 +518,13 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       setRepNotesMap(prev => isDeepEqual(prev, notesMap) ? prev : notesMap);
 
       if (settList && settList.length > 0) {
-        setSettings(prev => isDeepEqual(prev, settList[0]) ? prev : settList[0]);
+        const mergedSettings: AttendanceSettings = {
+          minLateMinutes: 4,
+          maxLateAsAbsenceMinutes: 15,
+          latesPerAbsence: 3,
+          ...settList[0]
+        };
+        setSettings(prev => isDeepEqual(prev, mergedSettings) ? prev : mergedSettings);
       }
     } catch (e) {
       console.error('Error loading attendance data:', e);
@@ -1172,10 +1187,20 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
   const handleSetStudentStatus = (studentId: string, status: AttendanceStatus) => {
     if (isDateLockedForRepresentative || isAttendanceReadOnlyForGradeSupervisor) return;
-    setStudentsAttendance(prev => ({
-      ...prev,
-      [studentId]: status
-    }));
+    const isPureRepresentative = isRepresentative && !isSuperAdmin && !isEducationManager && !isGradeSupervisor;
+    setStudentsAttendance(prev => {
+      const nextStatus: AttendanceStatus =
+        isPureRepresentative && prev[studentId] === status ? 'unspecified' : status;
+      if (nextStatus === 'late') {
+        setStudentLateMinutes(lmPrev =>
+          lmPrev[studentId] ? lmPrev : { ...lmPrev, [studentId]: Math.max(5, attendanceRules.minLateMinutes || 4) }
+        );
+      }
+      return {
+        ...prev,
+        [studentId]: nextStatus
+      };
+    });
   };
 
   // Date Navigation
@@ -1228,7 +1253,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         nationalId: s.nationalId || '',
         status: studentsAttendance[s.id] || 'unspecified',
         note: studentNotes[s.id] || '',
-        lateMinutes: studentLateMinutes[s.id] || undefined,
+        lateMinutes: studentsAttendance[s.id] === 'late' ? (studentLateMinutes[s.id] || undefined) : undefined,
         isExcused: studentExcused[s.id]?.isExcused || false,
         excuseReason: studentExcused[s.id]?.reason || '',
         hasEducationalWarning: studentWarnings[s.id] || false,
@@ -1641,11 +1666,12 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       // Do NOT count student absences or attendance stats on official educational holidays
       if (!r.isCancelled && !isCalendarHoliday && Array.isArray(r.students)) {
         r.students.forEach(s => {
-          if (s.status === 'present') totalPresents++;
-          else if (s.status === 'absent') totalAbsents++;
-          else if (s.status === 'late') totalLates++;
-          else if (s.status === 'excused') totalExcused++;
-          else if (s.status === 'unspecified') totalUnspecified++;
+          const classified = classifyAttendanceRecord(s, attendanceRules);
+          if (classified.effectiveStatus === 'present') totalPresents++;
+          else if (classified.effectiveStatus === 'absent') totalAbsents++;
+          else if (classified.effectiveStatus === 'late') totalLates++;
+          else if (classified.effectiveStatus === 'excused') totalExcused++;
+          else totalUnspecified++;
           if (s.hasEducationalWarning) totalWarnings++;
         });
       }
@@ -1663,7 +1689,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       totalUnspecified,
       totalWarnings
     };
-  }, [consolidatedReportRecords, programs, academicHolidays]);
+  }, [consolidatedReportRecords, programs, academicHolidays, attendanceRules]);
 
   // Compute All-Time Absence Educational Warnings per Student (from start of year until now, deduplicated across attendance logs & workflow_items)
   const allTimeAbsenceWarningsByStudent = useMemo(() => {
@@ -1834,17 +1860,25 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
           if (canonicalId && studentMap[canonicalId]) {
             const entry = studentMap[canonicalId];
+            const classified = classifyAttendanceRecord(stItem, attendanceRules);
             if (!rec.isCancelled && !isCalendarHoliday) {
               entry.heldSessionsEnrolled++;
-              if (stItem.status === 'present') entry.presentCount++;
-              else if (stItem.status === 'absent') entry.absentCount++;
-              else if (stItem.status === 'late') entry.lateCount++;
-              else if (stItem.status === 'excused') entry.excusedCount++;
-              else if (stItem.status === 'unspecified') {
-                if (settings.unspecifiedCountAs === 'absent') entry.absentCount++;
-                else if (settings.unspecifiedCountAs === 'present') entry.presentCount++;
-                else if (settings.unspecifiedCountAs === 'late') entry.lateCount++;
-                else entry.unspecifiedCount++;
+              if (classified.effectiveStatus === 'present') entry.presentCount++;
+              else if (classified.effectiveStatus === 'absent') {
+                entry.absentCount++;
+                if (classified.lateConvertedToAbsence) {
+                  (entry as any).lateOverLimitAsAbsenceCount = ((entry as any).lateOverLimitAsAbsenceCount || 0) + 1;
+                }
+              }
+              else if (classified.effectiveStatus === 'late') {
+                entry.lateCount++;
+                (entry as any).totalLateMinutes = ((entry as any).totalLateMinutes || 0) + classified.countedLateMinutes;
+              }
+              else if (classified.effectiveStatus === 'excused') entry.excusedCount++;
+              else entry.unspecifiedCount++;
+
+              if (classified.ignoredLate) {
+                (entry as any).ignoredLateCount = ((entry as any).ignoredLateCount || 0) + 1;
               }
               if (stItem.hasEducationalWarning) entry.warningCount++;
               if (stItem.recordedMethod === 'self_reporting' || (rec as any).attendanceType === 'self_reporting') {
@@ -1862,6 +1896,9 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
               nationalId: nat,
               lateMinutes: stItem.lateMinutes,
               status: isCalendarHoliday ? ('holiday' as any) : stItem.status,
+              effectiveStatus: isCalendarHoliday ? ('holiday' as any) : classified.effectiveStatus,
+              ignoredLate: classified.ignoredLate,
+              lateConvertedToAbsence: classified.lateConvertedToAbsence,
               isCancelled: rec.isCancelled,
               isHoliday: isCalendarHoliday,
               note: isCalendarHoliday ? 'تعطیلی تقویم آموزشی' : stItem.note,
@@ -1874,8 +1911,14 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       }
     });
 
-    // Compute program title summary and course breakdown for each student
+    // Compute program title summary, tardiness-to-absence conversion, and course breakdown for each student
     Object.values(studentMap).forEach(entry => {
+      const directAbsentCount = entry.absentCount;
+      const lateConvertedAbsences = computeLateConvertedAbsences(entry.lateCount, attendanceRules);
+      (entry as any).directAbsentCount = directAbsentCount;
+      (entry as any).lateConvertedAbsences = lateConvertedAbsences;
+      entry.absentCount = directAbsentCount + lateConvertedAbsences;
+
       const selfC = (entry as any).selfReportedCount || 0;
       const repC = (entry as any).representativeCount || 0;
       let method: 'representative' | 'self_reporting' | 'mixed' = 'representative';
@@ -1886,15 +1929,16 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
       const courseMap: Record<string, { absent: number; excused: number; late: number; present: number }> = {};
       entry.history.forEach(h => {
-        if (h.isCancelled) return;
+        if (h.isCancelled || (h as any).isHoliday) return;
         const pTitle = h.programTitle || 'درس عمومی';
         if (!courseMap[pTitle]) {
           courseMap[pTitle] = { absent: 0, excused: 0, late: 0, present: 0 };
         }
-        if (h.status === 'absent') courseMap[pTitle].absent++;
-        else if (h.status === 'excused') courseMap[pTitle].excused++;
-        else if (h.status === 'late') courseMap[pTitle].late++;
-        else if (h.status === 'present') courseMap[pTitle].present++;
+        const eff = (h as any).effectiveStatus || h.status;
+        if (eff === 'absent') courseMap[pTitle].absent++;
+        else if (eff === 'excused') courseMap[pTitle].excused++;
+        else if (eff === 'late') courseMap[pTitle].late++;
+        else if (eff === 'present') courseMap[pTitle].present++;
       });
 
       (entry as any).courseBreakdown = courseMap;
@@ -1906,6 +1950,9 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
           parts.push(`${pTitle}: ${counts.absent} غیبت${counts.excused > 0 ? ` (+${counts.excused} موجه)` : ''}`);
         }
       });
+      if (lateConvertedAbsences > 0) {
+        parts.push(`معادل تاخیرها: +${lateConvertedAbsences} غیبت`);
+      }
       (entry as any).compactCourseSummary = parts.length > 0 ? parts.join(' | ') : 'بدون غیبت در دروس';
 
       const titles = Array.from(new Set(entry.history.map(h => h.programTitle).filter(Boolean)));
@@ -1951,7 +1998,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     }
 
     return list;
-  }, [students, consolidatedReportRecords, reportGradeFilter, reportSearchQuery, reportWarningOnlyFilter, reportShowAllStudents, reportMethodFilter, reportSortBy, settings, programs, allTimeAbsenceWarningsByStudent]);
+  }, [students, consolidatedReportRecords, reportGradeFilter, reportSearchQuery, reportWarningOnlyFilter, reportShowAllStudents, reportMethodFilter, reportSortBy, settings, attendanceRules, programs, allTimeAbsenceWarningsByStudent]);
 
   // Grouped by Class Report Data (for reportViewMode === 'class')
   const classGroupedReportList = useMemo(() => {
@@ -2029,10 +2076,11 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
           const stMapEntry = cEntry.studentsMap[stItem.studentId];
           stMapEntry.eligibleDaysCount++;
-          if (stItem.status === 'absent') stMapEntry.absentCount++;
-          else if (stItem.status === 'excused') stMapEntry.excusedCount++;
-          else if (stItem.status === 'late') stMapEntry.lateCount++;
-          else if (stItem.status === 'present') stMapEntry.presentCount++;
+          const classified = classifyAttendanceRecord(stItem, attendanceRules);
+          if (classified.effectiveStatus === 'absent') stMapEntry.absentCount++;
+          else if (classified.effectiveStatus === 'excused') stMapEntry.excusedCount++;
+          else if (classified.effectiveStatus === 'late') stMapEntry.lateCount++;
+          else if (classified.effectiveStatus === 'present') stMapEntry.presentCount++;
 
           if (stItem.hasEducationalWarning) stMapEntry.warningCount++;
 
@@ -2043,6 +2091,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
             logId: rec.id,
             studentId: stItem.studentId,
             status: stItem.status,
+            effectiveStatus: classified.effectiveStatus,
             note: stItem.note,
             excuseReason: stItem.excuseReason,
             lateMinutes: stItem.lateMinutes
@@ -2052,7 +2101,16 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     });
 
     return Object.values(classMap).map(cGroup => {
-      let stList = Object.values(cGroup.studentsMap);
+      let stList = Object.values(cGroup.studentsMap).map(stItem => {
+        const directAbsentCount = stItem.absentCount;
+        const lateConvertedAbsences = computeLateConvertedAbsences(stItem.lateCount, attendanceRules);
+        return {
+          ...stItem,
+          directAbsentCount,
+          lateConvertedAbsences,
+          absentCount: directAbsentCount + lateConvertedAbsences
+        };
+      });
       if (!reportShowAllStudents) {
         stList = stList.filter(s => s.absentCount > 0 || s.excusedCount > 0);
       }
@@ -2063,7 +2121,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         studentsList: stList
       };
     }).filter(cGroup => cGroup.studentsList.length > 0);
-  }, [consolidatedReportRecords, programs, students, reportGradeFilter, reportSearchQuery, reportShowAllStudents, reportMethodFilter, academicHolidays, allTimeAbsenceWarningsByStudent]);
+  }, [consolidatedReportRecords, programs, students, reportGradeFilter, reportSearchQuery, reportShowAllStudents, reportMethodFilter, academicHolidays, allTimeAbsenceWarningsByStudent, attendanceRules]);
 
   // Aggregated Representatives List for Education Manager
   const representativesList = useMemo(() => {
@@ -2651,7 +2709,8 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
               'تعداد روزهای مشمول': stItem.eligibleDaysCount,
               'نام و نام خانوادگی طلبه': stItem.student.name,
               'کد ملی': stItem.student.nationalId || '',
-              'غیبت غیرموجه': stItem.absentCount,
+              'غیبت غیرموجه (موثر)': stItem.absentCount,
+              'غیبت معادل تاخیر': (stItem as any).lateConvertedAbsences || 0,
               'غیبت موجه': stItem.excusedCount,
               'تاخیر': stItem.lateCount,
               'تعداد اخطارها (بازه)': stItem.warningCount,
@@ -2671,7 +2730,8 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
           if (showSummaryCourseBreakdown) {
             row['خلاصه غیبت‌ها به تفکیک دروس'] = (item as any).compactCourseSummary || 'بدون غیبت';
           }
-          row['مجموع غیبت غیرموجه'] = item.absentCount;
+          row['مجموع غیبت غیرموجه (موثر)'] = item.absentCount;
+          row['غیبت معادل تاخیر'] = (item as any).lateConvertedAbsences || 0;
           row['مجموع غیبت موجه'] = item.excusedCount;
           row['کل تاخیرها'] = item.lateCount;
           row['اخطارهای بازه'] = item.warningCount;
@@ -2688,7 +2748,8 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
           'کلاس / درس مربوطه': (item as any).programTitleSummary || 'عمومی',
           'تعداد جلسات برگزار شده': item.heldSessionsEnrolled,
           'تعداد حضور': item.presentCount,
-          'غیبت غیرموجه': item.absentCount,
+          'غیبت غیرموجه (موثر)': item.absentCount,
+          'غیبت معادل تاخیر': (item as any).lateConvertedAbsences || 0,
           'غیبت موجه': item.excusedCount,
           'تاخیر در ورود': item.lateCount,
           'نامشخص': item.unspecifiedCount,
@@ -4880,7 +4941,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                                   {student.grade}
                                 </span>
                               )}
-                              {(!currentStatus || currentStatus === 'unspecified') && (
+                              {(!currentStatus || currentStatus === 'unspecified') && (isSuperAdmin || isEducationManager || isGradeSupervisor) && (
                                 <span className="text-[10px] bg-amber-50 text-amber-800 font-bold px-1.5 py-0.2 rounded border border-amber-200">
                                   تعیین‌نشده (نامشخص)
                                 </span>
@@ -4904,11 +4965,11 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                                     <span>شیوه ثبت: نماینده</span>
                                   </span>
                                 )
-                              ) : (
+                              ) : (isSuperAdmin || isEducationManager || isGradeSupervisor) ? (
                                 <span className="text-[10px] bg-slate-100 text-slate-400 font-medium px-1.5 py-0.2 rounded border border-slate-200">
                                   شیوه ثبت: ثبت‌نشده
                                 </span>
-                              )}
+                              ) : null}
                             </div>
                             {student.nationalId && (
                               <span className="text-[10px] text-slate-400 font-mono">کد ملی: {student.nationalId}</span>
@@ -5014,10 +5075,46 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                             )}
                           </div>
 
-                          {/* Badge for unrecorded status */}
-                          {(!currentStatus || currentStatus === 'unspecified') && (
+                          {/* Inline Late Minutes Control when status === 'late' */}
+                          {currentStatus === 'late' && (() => {
+                            const lm = studentLateMinutes[student.id] ?? Math.max(5, attendanceRules.minLateMinutes || 4);
+                            const isBelowMin = attendanceRules.minLateMinutes > 0 && lm < attendanceRules.minLateMinutes;
+                            const isOverMax = attendanceRules.maxLateAsAbsenceMinutes > 0 && lm > attendanceRules.maxLateAsAbsenceMinutes;
+                            return (
+                              <div className="flex items-center gap-1 bg-amber-50 px-2 py-1 rounded-xl border border-amber-200 text-[10px] font-bold text-amber-900 flex-wrap">
+                                <span>مدت:</span>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={180}
+                                  disabled={isDateLockedForRepresentative || isAttendanceReadOnlyForGradeSupervisor}
+                                  value={lm}
+                                  onChange={(e) => {
+                                    const val = parseInt(e.target.value, 10);
+                                    const capped = isNaN(val) ? 1 : Math.max(1, Math.min(180, val));
+                                    setStudentLateMinutes(prev => ({ ...prev, [student.id]: capped }));
+                                  }}
+                                  className="w-12 px-1 py-0.5 bg-white border border-amber-300 rounded text-center font-mono font-bold text-[11px] text-amber-950 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                />
+                                <span className="text-[9.5px] text-amber-700">دقیقه</span>
+                                {isBelowMin && (
+                                  <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200 text-[9.5px]">
+                                    زیر {attendanceRules.minLateMinutes} دقیقه (بی‌اثر)
+                                  </span>
+                                )}
+                                {isOverMax && (
+                                  <span className="px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-200 text-[9.5px]">
+                                    بالای {attendanceRules.maxLateAsAbsenceMinutes} دقیقه (غیبت)
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })()}
+
+                          {/* Badge for unrecorded status - Visible for Education Manager / Admins / Supervisors (hidden from Representative) */}
+                          {(!currentStatus || currentStatus === 'unspecified') && (isSuperAdmin || isEducationManager || isGradeSupervisor) && (
                             <span className="px-2 py-0.5 bg-amber-50 text-amber-800 text-[10px] font-bold rounded-lg border border-amber-200">
-                              ثبت‌نشده
+                              نامشخص
                             </span>
                           )}
 
@@ -5484,6 +5581,38 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
               </div>
             </div>
 
+            {/* Active Tardiness & Conversion Rules Banner */}
+            <div className="px-4 py-2 bg-amber-50/70 border-b border-amber-100 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+              <div className="flex items-center gap-2 flex-wrap text-amber-950 font-bold">
+                <Clock3 size={14} className="text-amber-600 shrink-0" />
+                <span>ضوابط فعال تاخیر در این گزارش:</span>
+                <span className="px-2 py-0.5 rounded-lg bg-white border border-amber-200 text-emerald-800 font-bold">
+                  {attendanceRules.minLateMinutes > 0
+                    ? `تاخیر زیر ${attendanceRules.minLateMinutes} دقیقه بی‌اثر`
+                    : 'همه تاخیرها محاسبه می‌شود'}
+                </span>
+                <span className="px-2 py-0.5 rounded-lg bg-white border border-amber-200 text-rose-800 font-bold">
+                  {attendanceRules.maxLateAsAbsenceMinutes > 0
+                    ? `تاخیر بالای ${attendanceRules.maxLateAsAbsenceMinutes} دقیقه = غیبت`
+                    : 'تبدیل تاخیر طولانی به غیبت غیرفعال'}
+                </span>
+                <span className="px-2 py-0.5 rounded-lg bg-white border border-amber-200 text-indigo-800 font-bold">
+                  {attendanceRules.latesPerAbsence > 0
+                    ? `هر ${attendanceRules.latesPerAbsence} تاخیر = ۱ غیبت در گزارش بازه‌ای`
+                    : 'تبدیل تجمع تاخیر به غیبت غیرفعال'}
+                </span>
+              </div>
+              {(isSuperAdmin || isEducationManager) && (
+                <button
+                  type="button"
+                  onClick={() => setIsSettingsOpen(true)}
+                  className="text-[11px] font-bold text-indigo-700 hover:text-indigo-900 underline cursor-pointer"
+                >
+                  تغییر ضوابط در تنظیمات
+                </button>
+              )}
+            </div>
+
             {/* VIEW MODE 1: CLASS GROUPED (به ترتیب کلاس‌ها - مثلاً ابتدا اصول استاد احمدی، سپس فقه و ...) */}
             {reportViewMode === 'class' ? (
               <div className="p-4 space-y-6">
@@ -5547,9 +5676,16 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                                 </td>
                                 <td className="p-2.5 text-center font-mono font-black text-rose-600">
                                   {stItem.absentCount > 0 ? (
-                                    <span className="px-2 py-0.5 bg-rose-100 text-rose-800 rounded-md">
-                                      {stItem.absentCount} جلسه
-                                    </span>
+                                    <div className="inline-flex flex-col items-center gap-0.5">
+                                      <span className="px-2 py-0.5 bg-rose-100 text-rose-800 rounded-md">
+                                        {stItem.absentCount} جلسه
+                                      </span>
+                                      {(stItem as any).lateConvertedAbsences > 0 && (
+                                        <span className="text-[9.5px] font-bold text-amber-700">
+                                          (+{(stItem as any).lateConvertedAbsences} از تاخیر)
+                                        </span>
+                                      )}
+                                    </div>
                                   ) : '0'}
                                 </td>
                                 <td className="p-2.5 text-center font-mono font-bold text-indigo-700">
@@ -5642,7 +5778,16 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                               </div>
                             </td>
                           )}
-                          <td className="p-3 text-center font-mono font-black text-rose-600">{item.absentCount}</td>
+                          <td className="p-3 text-center font-mono font-black text-rose-600">
+                            <div className="inline-flex flex-col items-center gap-0.5">
+                              <span>{item.absentCount}</span>
+                              {(item as any).lateConvertedAbsences > 0 && (
+                                <span className="text-[9.5px] font-bold px-1.5 py-0.2 rounded bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap">
+                                  شامل +{(item as any).lateConvertedAbsences} از تاخیر
+                                </span>
+                              )}
+                            </div>
+                          </td>
                           <td className="p-3 text-center font-mono font-bold text-indigo-700">{item.excusedCount}</td>
                           <td className="p-3 text-center font-mono font-bold text-amber-700">{item.lateCount}</td>
                           <td className="p-3 text-center font-mono font-black text-rose-800">
@@ -5768,9 +5913,16 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                           <td className="p-3 text-center font-mono font-black text-emerald-700">{item.presentCount}</td>
                           <td className="p-3 text-center font-mono font-black text-rose-600">
                             {item.absentCount > 0 ? (
-                              <span className="px-2 py-0.5 bg-rose-100 text-rose-800 rounded-md">
-                                {item.absentCount}
-                              </span>
+                              <div className="inline-flex flex-col items-center gap-0.5">
+                                <span className="px-2 py-0.5 bg-rose-100 text-rose-800 rounded-md">
+                                  {item.absentCount}
+                                </span>
+                                {(item as any).lateConvertedAbsences > 0 && (
+                                  <span className="text-[9.5px] font-bold text-amber-700 whitespace-nowrap">
+                                    (+{(item as any).lateConvertedAbsences} از تاخیر)
+                                  </span>
+                                )}
+                              </div>
                             ) : '0'}
                           </td>
                           <td className="p-3 text-center font-mono font-bold text-indigo-700">{item.excusedCount}</td>
@@ -6525,9 +6677,9 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5"
+              className="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] flex flex-col p-6 shadow-2xl border border-slate-200 space-y-4"
             >
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
                 <div className="flex items-center gap-2">
                   <SlidersHorizontal size={18} className="text-indigo-600" />
                   <h3 className="text-sm font-black text-slate-900">تنظیمات حضور و غیاب</h3>
@@ -6541,7 +6693,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                 </button>
               </div>
 
-              <div className="space-y-4 text-xs">
+              <div className="space-y-4 text-xs overflow-y-auto pl-1 flex-1">
                 {isGradeSupervisor && (
                   <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-amber-800 text-[11px] font-bold">
                     {settings.allowGradeProfessorSettingsEdit 
@@ -6626,6 +6778,76 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                       </select>
                       <p className="text-[10px] text-slate-500 mt-1">
                         چنانچه طلبه در مهلت خوداظهاری وضعیتی اعلام نکند، سیستم این حالت را ثبت می‌کند.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Tardiness & Conversion Rules Card */}
+                  <div className="p-3.5 bg-amber-50/70 rounded-2xl border border-amber-200 space-y-3">
+                    <div className="flex items-center gap-1.5 font-black text-amber-950 text-xs">
+                      <Clock3 size={15} className="text-amber-600" />
+                      <span>ضوابط محاسبه تاخیر و تبدیل به غیبت</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block font-bold text-amber-950 text-[11px] mb-1">
+                          حداقل دقیقه برای ثبت تاخیر (دقیقه):
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={60}
+                          value={settings.minLateMinutes ?? 4}
+                          onChange={(e) => {
+                            const v = parseInt(e.target.value, 10);
+                            setSettings({ ...settings, minLateMinutes: isNaN(v) ? 0 : Math.max(0, Math.min(60, v)) });
+                          }}
+                          className="w-full p-2 border border-amber-200 rounded-xl bg-white font-mono font-bold text-xs"
+                        />
+                        <p className="text-[10px] text-slate-600 mt-1 leading-relaxed">
+                          تاخیر کمتر از این عدد اصلاً تاخیر حساب نمی‌شود (مثلاً زیر ۴ دقیقه).
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-amber-950 text-[11px] mb-1">
+                          سقف تاخیر قبل از غیبت (دقیقه):
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={180}
+                          value={settings.maxLateAsAbsenceMinutes ?? 15}
+                          onChange={(e) => {
+                            const v = parseInt(e.target.value, 10);
+                            setSettings({ ...settings, maxLateAsAbsenceMinutes: isNaN(v) ? 0 : Math.max(0, Math.min(180, v)) });
+                          }}
+                          className="w-full p-2 border border-amber-200 rounded-xl bg-white font-mono font-bold text-xs"
+                        />
+                        <p className="text-[10px] text-slate-600 mt-1 leading-relaxed">
+                          تاخیر بیشتر از این عدد غیبت غیرموجه محسوب می‌شود (عدد ۰ = غیرفعال).
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-amber-200/70">
+                      <label className="block font-bold text-amber-950 text-[11px] mb-1">
+                        تعداد تاخیر معادل ۱ غیبت در گزارش تجمیعی بازه‌ای:
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={30}
+                        value={settings.latesPerAbsence ?? 3}
+                        onChange={(e) => {
+                          const v = parseInt(e.target.value, 10);
+                          setSettings({ ...settings, latesPerAbsence: isNaN(v) ? 0 : Math.max(0, Math.min(30, v)) });
+                        }}
+                        className="w-full p-2 border border-amber-200 rounded-xl bg-white font-mono font-bold text-xs"
+                      />
+                      <p className="text-[10px] text-slate-600 mt-1 leading-relaxed">
+                        در گزارش‌های تجمیعی بازه زمانی و محاسبات مالی، هر چند تاخیر معتبر معادل یک غیبت غیرموجه لحاظ شود (عدد ۰ = غیرفعال).
                       </p>
                     </div>
                   </div>
@@ -7661,15 +7883,17 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                   </div>
                 ) : (
                   enrolledStudents.map((st, idx) => {
-                    const curStatus = studentsAttendance[st.id] || 'present';
+                    const rawStatus = studentsAttendance[st.id];
+                    const curStatus = rawStatus && rawStatus !== 'unspecified' ? rawStatus : undefined;
+                    const lm = studentLateMinutes[st.id] ?? Math.max(5, attendanceRules.minLateMinutes || 4);
                     return (
-                      <div key={st.id} className="p-2.5 bg-white border border-slate-200 rounded-xl flex items-center justify-between gap-2 hover:bg-slate-50/80 transition-all shadow-2xs">
+                      <div key={st.id} className="p-2.5 bg-white border border-slate-200 rounded-xl flex flex-wrap items-center justify-between gap-2 hover:bg-slate-50/80 transition-all shadow-2xs">
                         <div className="flex items-center gap-2 min-w-0">
                           <span className="text-[10px] font-bold text-slate-400 w-5 text-center">{idx + 1}</span>
                           <span className="text-xs font-bold text-slate-800 truncate">{st.name}</span>
                           {st.studentCode && <span className="text-[10px] text-slate-400 font-mono">({st.studentCode})</span>}
                         </div>
-                        <div className="flex items-center gap-1 shrink-0">
+                        <div className="flex items-center gap-1 shrink-0 flex-wrap">
                           <button
                             type="button"
                             onClick={() => handleSetStudentStatus(st.id, 'present')}
@@ -7700,6 +7924,23 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                           >
                             تاخیر
                           </button>
+                          {curStatus === 'late' && (
+                            <div className="flex items-center gap-1 bg-amber-50 px-1.5 py-0.5 rounded-lg border border-amber-200 text-[10px] font-bold text-amber-900">
+                              <input
+                                type="number"
+                                min={1}
+                                max={180}
+                                value={lm}
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value, 10);
+                                  const capped = isNaN(val) ? 1 : Math.max(1, Math.min(180, val));
+                                  setStudentLateMinutes(prev => ({ ...prev, [st.id]: capped }));
+                                }}
+                                className="w-11 px-1 py-0.5 bg-white border border-amber-300 rounded text-center font-mono font-bold text-[11px] text-amber-950"
+                              />
+                              <span>دقیقه</span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     );

@@ -31,6 +31,7 @@ import {
   AcademicHolidayItem 
 } from '../../types';
 import { getTodayShamsi, getShamsiDayOfWeekName, subtractDaysShamsi, getConsolidatedSessionLog, normalizeShamsiDateStr, toEnglishDigits } from '../../lib/jalali';
+import { resolveAttendanceRules } from '../../lib/attendanceRules';
 
 interface RepresentativeQuickAttendanceViewProps {
   onNavigateTab?: (tab: string, studentId?: string) => void;
@@ -372,20 +373,27 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
     }
   }, [currentProgram?.id, selectedDate, attendanceLogs]);
 
-  // Fast attendance status updater
+  const attendanceRules = useMemo(() => resolveAttendanceRules(attendanceSettings), [attendanceSettings]);
+
+  // Fast attendance status updater (clicking the already active option turns all 3 options off -> saved as unspecified)
   const handleSetStudentStatus = (studentId: string, status: AttendanceStatus) => {
-    setDraftAttendance(prev => ({
-      ...prev,
-      [studentId]: {
-        ...(prev[studentId] || {}),
-        status,
-        lateMinutes: status === 'late' ? (prev[studentId]?.lateMinutes || 10) : undefined
-      }
-    }));
+    setDraftAttendance(prev => {
+      const current = prev[studentId]?.status;
+      const nextStatus: AttendanceStatus = current === status ? 'unspecified' : status;
+      const defaultLate = Math.max(5, attendanceRules.minLateMinutes || 4);
+      return {
+        ...prev,
+        [studentId]: {
+          ...(prev[studentId] || {}),
+          status: nextStatus,
+          lateMinutes: nextStatus === 'late' ? (prev[studentId]?.lateMinutes || defaultLate) : undefined
+        }
+      };
+    });
   };
 
   const handleSetStudentLateMinutes = (studentId: string, mins: number) => {
-    const capped = Math.max(1, Math.min(15, Number(mins) || 1));
+    const capped = Math.max(1, Math.min(180, Number(mins) || 1));
     setDraftAttendance(prev => ({
       ...prev,
       [studentId]: {
@@ -465,7 +473,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
           studentName: st.name,
           nationalId: st.nationalId,
           status: currentStatus,
-          lateMinutes: currentStatus === 'late' ? Math.min(15, Math.max(1, d?.lateMinutes || 10)) : undefined,
+          lateMinutes: currentStatus === 'late' ? Math.min(180, Math.max(1, d?.lateMinutes || Math.max(5, attendanceRules.minLateMinutes || 4))) : undefined,
           note: d?.note || (isCancelled ? 'تعطیلی کلاس' : undefined),
           recordedMethod: 'representative',
           recordedAt: nowIso,
@@ -881,7 +889,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
                     <span>لیست طلاب کلاس «{currentProgram?.title}»</span>
                   </h3>
                   <p className="text-[11px] text-slate-500 mt-0.5">
-                    تعداد طلاب کلاس: {classStudents.length} نفر • وضعیت اولیه: نامشخص (برای تغییر، روی گزینه‌ها کلیک نمایید)
+                    تعداد طلاب کلاس: {classStudents.length} نفر • هر سه گزینه به صورت پیش‌فرض خاموش است؛ طلاب انتخاب‌نشده در پنل مسئول آموزش با وضعیت «نامشخص» ثبت می‌شوند.
                   </p>
                 </div>
                 <span className="text-xs font-bold text-slate-500 font-mono">
@@ -897,8 +905,13 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
                 <div className="divide-y divide-slate-100">
                   {classStudents.map((st, idx) => {
                     const studentDraft = draftAttendance[String(st.id)];
-                    const status: AttendanceStatus = studentDraft?.status || 'unspecified';
-                    const lateMins = studentDraft?.lateMinutes || 10;
+                    const status: AttendanceStatus | undefined =
+                      studentDraft?.status && studentDraft.status !== 'unspecified'
+                        ? studentDraft.status
+                        : undefined;
+                    const lateMins = studentDraft?.lateMinutes ?? Math.max(5, attendanceRules.minLateMinutes || 4);
+                    const isBelowMinLate = status === 'late' && attendanceRules.minLateMinutes > 0 && lateMins < attendanceRules.minLateMinutes;
+                    const isOverMaxLate = status === 'late' && attendanceRules.maxLateAsAbsenceMinutes > 0 && lateMins > attendanceRules.maxLateAsAbsenceMinutes;
 
                     return (
                       <div 
@@ -926,7 +939,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
                           </div>
                         </div>
 
-                        {/* 4 Status Quick Pills */}
+                        {/* 3 Status Options ONLY (حاضر / غایب / تاخیر) — All OFF by default */}
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {/* حاضر */}
                           <button
@@ -973,26 +986,11 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
                             <span>تاخیر</span>
                           </button>
 
-                          {/* نامشخص */}
-                          <button
-                            type="button"
-                            disabled={isCancelled}
-                            onClick={() => handleSetStudentStatus(String(st.id), 'unspecified')}
-                            className={cn(
-                              "min-h-[44px] px-3.5 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1",
-                              status === 'unspecified' || !status
-                                ? "bg-slate-700 text-white border-slate-700 shadow-xs font-black"
-                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-800"
-                            )}
-                          >
-                            <span>نامشخص</span>
-                          </button>
-
                           {/* Late Minutes Quick Toggle if late */}
                           {status === 'late' && !isCancelled && (
                             <div className="flex items-center gap-1 mr-2 bg-amber-50 px-2 py-1 rounded-xl border border-amber-200 text-[10px] font-bold text-amber-900 flex-wrap">
                               <span>تاخیر:</span>
-                              {[5, 10, 15].map(m => (
+                              {[5, 10, 15, 20, 30].map(m => (
                                 <button
                                   key={m}
                                   type="button"
@@ -1009,17 +1007,27 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
                                 <input
                                   type="number"
                                   min={1}
-                                  max={15}
-                                  value={lateMins || 10}
+                                  max={180}
+                                  value={lateMins}
                                   onChange={(e) => {
                                     const val = parseInt(e.target.value, 10);
-                                    const capped = isNaN(val) ? 1 : Math.max(1, Math.min(15, val));
+                                    const capped = isNaN(val) ? 1 : Math.max(1, Math.min(180, val));
                                     handleSetStudentLateMinutes(String(st.id), capped);
                                   }}
-                                  className="w-10 px-1 py-0.5 bg-white border border-amber-300 rounded text-center font-mono font-bold text-[11px] text-amber-950 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                  className="w-12 px-1 py-0.5 bg-white border border-amber-300 rounded text-center font-mono font-bold text-[11px] text-amber-950 focus:outline-none focus:ring-1 focus:ring-amber-500"
                                 />
                                 <span className="text-[9px] text-amber-700">دقیقه</span>
                               </div>
+                              {isBelowMinLate && (
+                                <span className="px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-200 text-[9.5px] font-bold">
+                                  زیر {attendanceRules.minLateMinutes} دقیقه: تاخیر محسوب نمی‌شود
+                                </span>
+                              )}
+                              {isOverMaxLate && (
+                                <span className="px-1.5 py-0.5 rounded-md bg-rose-100 text-rose-800 border border-rose-200 text-[9.5px] font-bold">
+                                  بالای {attendanceRules.maxLateAsAbsenceMinutes} دقیقه: غیبت محسوب می‌شود
+                                </span>
+                              )}
                             </div>
                           )}
                         </div>

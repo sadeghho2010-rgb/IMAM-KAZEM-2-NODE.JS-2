@@ -16,7 +16,12 @@ import {
   XCircle, 
   Info,
   User,
-  Sparkles
+  Sparkles,
+  ChevronDown,
+  ChevronUp,
+  RefreshCw,
+  Calendar,
+  MessageSquare
 } from 'lucide-react';
 import {
   Student,
@@ -26,6 +31,8 @@ import {
   StudyPeriod,
   PeriodicStudyLog,
   AttendanceSessionLog,
+  AttendanceSettings,
+  AcademicHolidayItem,
   CounselingSessionGrade,
   StudentClaimRecord,
   FinanceClaimCategory,
@@ -34,7 +41,15 @@ import {
   MealReservationPeriod,
   StudyDailyEntry
 } from '../../../types';
-import { normalizeShamsiDateStr } from '../../../lib/jalali';
+import { normalizeShamsiDateStr, dateToShamsi, toPersianDigits } from '../../../lib/jalali';
+import {
+  resolveAttendanceRules,
+  classifyAttendanceRecord,
+  computeLateConvertedAbsences,
+  consolidateAttendanceLogs,
+  isDateOfficialHoliday,
+  buildStudentCanonicalMatcher
+} from '../../../lib/attendanceRules';
 import { cn } from '../../../lib/utils';
 import { useIsAdminMobile } from '../../admin/mobile/AdminMobileContext';
 import { MobileHorizontalTabs, MobileSearchFilterBar } from '../../admin/mobile/MobileModulePrimitives';
@@ -58,6 +73,8 @@ interface ActivityInfoTabbedViewProps {
   studyLogs: PeriodicStudyLog[];
   studyDailyEntries?: StudyDailyEntry[];
   attendanceLogs: AttendanceSessionLog[];
+  attendanceSettings?: AttendanceSettings | null;
+  academicHolidays?: AcademicHolidayItem[];
   counselingGrades: CounselingSessionGrade[];
   mealReservations: StudentMealReservation[];
   mealPeriods?: MealReservationPeriod[];
@@ -91,6 +108,10 @@ interface ActivityInfoTabbedViewProps {
   onOpenEditProfile: (student: Student) => void;
   onNavigateToMechanized: () => void;
   onOpenDebtModal: (student: Student) => void;
+  onRefreshCounselingGrades?: () => void;
+  isRefreshingCounseling?: boolean;
+  onRefreshAttendance?: () => void;
+  isRefreshingAttendance?: boolean;
 }
 
 type TabType = 
@@ -112,6 +133,8 @@ export const ActivityInfoTabbedView: React.FC<ActivityInfoTabbedViewProps> = ({
   studyLogs,
   studyDailyEntries = [],
   attendanceLogs,
+  attendanceSettings = null,
+  academicHolidays = [],
   counselingGrades,
   mealReservations = [],
   mealPeriods = [],
@@ -119,6 +142,7 @@ export const ActivityInfoTabbedView: React.FC<ActivityInfoTabbedViewProps> = ({
   claimsList,
   destinationAccounts,
   loans,
+  settings,
   startDate,
   endDate,
   gradeFilter,
@@ -130,7 +154,11 @@ export const ActivityInfoTabbedView: React.FC<ActivityInfoTabbedViewProps> = ({
   onOpenSlipDetail,
   onOpenEditProfile,
   onNavigateToMechanized,
-  onOpenDebtModal
+  onOpenDebtModal,
+  onRefreshCounselingGrades,
+  isRefreshingCounseling = false,
+  onRefreshAttendance,
+  isRefreshingAttendance = false
 }) => {
   const isAdminMobile = useIsAdminMobile();
   const [activeTab, setActiveTab] = useState<TabType>('summary');
@@ -139,6 +167,11 @@ export const ActivityInfoTabbedView: React.FC<ActivityInfoTabbedViewProps> = ({
   // Study Tab Specific Filters
   const [selectedStudyPeriodId, setSelectedStudyPeriodId] = useState<string>('all');
   const [studyFilterBelowAvgAndReq, setStudyFilterBelowAvgAndReq] = useState<boolean>(false);
+
+  // Counseling & Attendance Tab Specific UI State
+  const [counselingOnlyEvaluated, setCounselingOnlyEvaluated] = useState<boolean>(false);
+  const [expandedCounselingStudentId, setExpandedCounselingStudentId] = useState<string | null>(null);
+  const [expandedAttendanceStudentId, setExpandedAttendanceStudentId] = useState<string | null>(null);
 
   const normStart = useMemo(() => normalizeShamsiDateStr(startDate), [startDate]);
   const normEnd = useMemo(() => normalizeShamsiDateStr(endDate), [endDate]);
@@ -152,14 +185,109 @@ export const ActivityInfoTabbedView: React.FC<ActivityInfoTabbedViewProps> = ({
     });
   }, [studyPeriods, normStart, normEnd]);
 
-  // Attendance sessions in the selected date range
+  // Active attendance rules (configured by Education Officer)
+  const attendanceRules = useMemo(() => resolveAttendanceRules(attendanceSettings), [attendanceSettings]);
+
+  // Consolidated, non-cancelled, non-holiday attendance sessions in the selected date range
   const attendanceLogsInRange = useMemo(() => {
-    return attendanceLogs.filter(session => {
+    const consolidated = consolidateAttendanceLogs(attendanceLogs);
+    return consolidated.filter(session => {
       if (session.isCancelled) return false;
       const sDate = normalizeShamsiDateStr(session.date);
-      return (!normStart || sDate >= normStart) && (!normEnd || sDate <= normEnd);
+      if (!sDate) return false;
+      const inRange = (!normStart || sDate >= normStart) && (!normEnd || sDate <= normEnd);
+      if (!inRange) return false;
+      if (isDateOfficialHoliday(sDate, session.grade, academicHolidays)) return false;
+      return true;
     });
-  }, [attendanceLogs, normStart, normEnd]);
+  }, [attendanceLogs, normStart, normEnd, academicHolidays]);
+
+  // Complete, rule-aware Attendance Report per Student in Selected Date Range [normStart, normEnd]
+  const attendanceRangeReport = useMemo(() => {
+    const matchStudentId = buildStudentCanonicalMatcher(students);
+
+    type StudentAttendanceRow = {
+      presentCount: number;
+      directUnexcusedCount: number;
+      lateConvertedAbsences: number;
+      unexcusedCount: number;
+      excusedCount: number;
+      lateCount: number;
+      lateMinutesTotal: number;
+      unspecifiedCount: number;
+      totalSessions: number;
+      sessions: Array<{
+        date: string;
+        programTitle: string;
+        rawStatus: string;
+        effectiveStatus: string;
+        lateMinutes?: number;
+        ignoredLate?: boolean;
+        lateConvertedToAbsence?: boolean;
+        excuseReason?: string;
+      }>;
+    };
+
+    const byStudent: Record<string, StudentAttendanceRow> = {};
+    const ensureRow = (sid: string): StudentAttendanceRow => {
+      if (!byStudent[sid]) {
+        byStudent[sid] = {
+          presentCount: 0,
+          directUnexcusedCount: 0,
+          lateConvertedAbsences: 0,
+          unexcusedCount: 0,
+          excusedCount: 0,
+          lateCount: 0,
+          lateMinutesTotal: 0,
+          unspecifiedCount: 0,
+          totalSessions: 0,
+          sessions: []
+        };
+      }
+      return byStudent[sid];
+    };
+
+    attendanceLogsInRange.forEach(session => {
+      if (!Array.isArray(session.students)) return;
+      const normDate = normalizeShamsiDateStr(session.date);
+      session.students.forEach(rec => {
+        const canonicalId = matchStudentId(rec) || String(rec.studentId || '').trim();
+        if (!canonicalId) return;
+        const row = ensureRow(canonicalId);
+        const classified = classifyAttendanceRecord(rec, attendanceRules);
+
+        row.totalSessions++;
+        if (classified.effectiveStatus === 'present') row.presentCount++;
+        else if (classified.effectiveStatus === 'absent') row.directUnexcusedCount++;
+        else if (classified.effectiveStatus === 'excused') row.excusedCount++;
+        else if (classified.effectiveStatus === 'late') {
+          row.lateCount++;
+          row.lateMinutesTotal += classified.countedLateMinutes;
+        } else {
+          row.unspecifiedCount++;
+        }
+
+        row.sessions.push({
+          date: normDate || session.date,
+          programTitle: session.programTitle || 'کلاس درسی',
+          rawStatus: rec.status || 'unspecified',
+          effectiveStatus: classified.effectiveStatus,
+          lateMinutes: rec.lateMinutes,
+          ignoredLate: classified.ignoredLate,
+          lateConvertedToAbsence: classified.lateConvertedToAbsence,
+          excuseReason: rec.excuseReason
+        });
+      });
+    });
+
+    Object.values(byStudent).forEach(row => {
+      row.lateConvertedAbsences = computeLateConvertedAbsences(row.lateCount, attendanceRules);
+      row.unexcusedCount = row.directUnexcusedCount + row.lateConvertedAbsences;
+      row.sessions.sort((a, b) => b.date.localeCompare(a.date));
+    });
+
+    return byStudent;
+  }, [students, attendanceLogsInRange, attendanceRules]);
 
   // Overlapping meal periods in the selected date range
   const relevantMealPeriodIds = useMemo(() => {
@@ -172,19 +300,262 @@ export const ActivityInfoTabbedView: React.FC<ActivityInfoTabbedViewProps> = ({
     );
   }, [mealPeriods, normStart, normEnd]);
 
-  // Filtered Students
+  // Filtered Students (supports Persian/English grade digits seamlessly)
   const filteredStudents = useMemo(() => {
+    const normalizeGradeVal = (val?: string) =>
+      toPersianDigits(String(val || '').replace(/ي/g, 'ی').replace(/ك/g, 'ک').trim());
+    const targetGradeNorm = normalizeGradeVal(gradeFilter);
+
     return students.filter(st => {
-      if (gradeFilter !== 'all' && st.grade !== gradeFilter) return false;
+      if (gradeFilter !== 'all') {
+        const stGradeNorm = normalizeGradeVal(st.grade);
+        if (stGradeNorm !== targetGradeNorm) {
+          const digits = ['۱۰', '۷', '۸', '۹', '۱', '۲', '۳', '۴', '۵', '۶'];
+          const matchedDigit = digits.some(d => targetGradeNorm.includes(d) && stGradeNorm.includes(d));
+          if (!matchedDigit) return false;
+        }
+      }
       if (searchQuery.trim()) {
         const query = searchQuery.trim().toLowerCase();
         const matchName = (st.name || '').toLowerCase().includes(query);
-        const matchCode = (st.nationalId || '').includes(query) || (st.managementCenterCode || '').includes(query);
+        const matchCode =
+          (st.nationalId || '').includes(query) ||
+          (st.managementCenterCode || '').includes(query) ||
+          (st.studentCode || '').toLowerCase().includes(query);
         if (!matchName && !matchCode) return false;
       }
       return true;
     });
   }, [students, gradeFilter, searchQuery]);
+
+  // Complete Counseling Evaluations Map & Summary in Selected Date Range [normStart, normEnd]
+  const counselingRangeReport = useMemo(() => {
+    const normalizePersian = (val?: string) =>
+      String(val || '').replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/\s+/g, ' ').trim();
+
+    const extractNormDate = (g: CounselingSessionGrade): string => {
+      const raw = g.sessionDate || (g as any).date || (g as any).session_date || '';
+      const trimmed = String(raw).trim();
+      if (!trimmed) return '';
+      if (/^\d{4}-\d{2}-\d{2}T/.test(trimmed)) {
+        const parsed = new Date(trimmed);
+        if (!isNaN(parsed.getTime())) {
+          return normalizeShamsiDateStr(dateToShamsi(parsed));
+        }
+      }
+      return normalizeShamsiDateStr(trimmed);
+    };
+
+    const byId = new Map<string, Student>();
+    const byCode = new Map<string, Student>();
+    const byNational = new Map<string, Student>();
+    const byName = new Map<string, Student>();
+
+    students.forEach(s => {
+      byId.set(String(s.id).trim(), s);
+      if (s.studentCode) byCode.set(String(s.studentCode).trim().toLowerCase(), s);
+      if (s.nationalId) byNational.set(String(s.nationalId).trim(), s);
+      if (s.name) byName.set(normalizePersian(s.name), s);
+    });
+
+    const resolveStudent = (g: CounselingSessionGrade): Student | null => {
+      const rawId = String(g.studentId || (g as any).student_id || '').trim();
+      if (rawId && byId.has(rawId)) return byId.get(rawId)!;
+      if (rawId && byCode.has(rawId.toLowerCase())) return byCode.get(rawId.toLowerCase())!;
+      if (rawId && byNational.has(rawId)) return byNational.get(rawId)!;
+      const rawCode = String((g as any).studentCode || '').trim().toLowerCase();
+      if (rawCode && byCode.has(rawCode)) return byCode.get(rawCode)!;
+      const rawNat = String((g as any).nationalId || '').trim();
+      if (rawNat && byNational.has(rawNat)) return byNational.get(rawNat)!;
+      const normName = normalizePersian(g.studentName);
+      if (normName && byName.has(normName)) return byName.get(normName)!;
+      return null;
+    };
+
+    // 1. Deduplicate all counseling grades within [normStart, normEnd]
+    const dedupMap = new Map<string, { studentKey: string; matchedStudent: Student | null; grade: CounselingSessionGrade; normDate: string }>();
+    (counselingGrades || []).forEach(g => {
+      const normDate = extractNormDate(g);
+      if (!normDate) return;
+      if (normStart && normDate < normStart) return;
+      if (normEnd && normDate > normEnd) return;
+
+      const matched = resolveStudent(g);
+      const studentKey = matched
+        ? matched.id
+        : String(g.studentId || (g as any).student_id || normalizePersian(g.studentName) || g.id).trim();
+      if (!studentKey) return;
+
+      const dedupKey = `${studentKey}::${normalizePersian(g.courseTitle || '')}::${normDate}`;
+      const existing = dedupMap.get(dedupKey);
+      if (!existing) {
+        dedupMap.set(dedupKey, { studentKey, matchedStudent: matched, grade: { ...g, sessionDate: normDate }, normDate });
+      } else {
+        const curVer = Number((g as any).version || 0);
+        const oldVer = Number((existing.grade as any).version || 0);
+        const curTime = new Date(g.updatedAt || g.createdAt || 0).getTime();
+        const oldTime = new Date(existing.grade.updatedAt || existing.grade.createdAt || 0).getTime();
+        if (curVer > oldVer || (curVer === oldVer && curTime >= oldTime)) {
+          dedupMap.set(dedupKey, { studentKey, matchedStudent: matched, grade: { ...g, sessionDate: normDate }, normDate });
+        }
+      }
+    });
+
+    interface StudentCounselingSummary {
+      studentId: string;
+      studentName: string;
+      grade: string;
+      nationalId?: string;
+      sessions: CounselingSessionGrade[];
+      sessionsCount: number;
+      countA: number;
+      countB: number;
+      countC: number;
+      countD: number;
+      countAbsence: number;
+      countNoHomework: number;
+      bonusAmount: number;
+    }
+
+    const byStudentKey = new Map<string, StudentCounselingSummary>();
+
+    const ensureEntry = (studentId: string, studentName: string, grade: string, nationalId?: string) => {
+      let entry = byStudentKey.get(studentId);
+      if (!entry) {
+        entry = {
+          studentId,
+          studentName,
+          grade,
+          nationalId,
+          sessions: [],
+          sessionsCount: 0,
+          countA: 0,
+          countB: 0,
+          countC: 0,
+          countD: 0,
+          countAbsence: 0,
+          countNoHomework: 0,
+          bonusAmount: 0
+        };
+        byStudentKey.set(studentId, entry);
+      }
+      return entry;
+    };
+
+    const bonusA = settings?.counselingGradeABonus ?? 30000;
+    const bonusB = settings?.counselingGradeBBonus ?? 15000;
+    const bonusC = settings?.counselingGradeCBonus ?? 0;
+
+    dedupMap.forEach(({ studentKey, matchedStudent, grade: g }) => {
+      const entry = ensureEntry(
+        studentKey,
+        matchedStudent?.name || g.studentName || 'طلبه ناشناس',
+        matchedStudent?.grade || g.grade || '-',
+        matchedStudent?.nationalId
+      );
+
+      entry.sessions.push(g);
+      entry.sessionsCount += 1;
+
+      const pScore = normalizePersian(String(g.participationScore || (g as any).score || ''));
+      if (pScore === 'الف') entry.countA += 1;
+      else if (pScore === 'ب') entry.countB += 1;
+      else if (pScore === 'ج') entry.countC += 1;
+      else if (pScore === 'د') entry.countD += 1;
+      else if (pScore === 'غیبت') entry.countAbsence += 1;
+
+      const rScore = normalizePersian(String(g.researchScore || ''));
+      if (rScore === 'الف') entry.countA += 1;
+      else if (rScore === 'ب') entry.countB += 1;
+      else if (rScore === 'ج') entry.countC += 1;
+      else if (rScore === 'د') entry.countD += 1;
+      else if (rScore === 'عدم انجام تکلیف' || rScore === 'غیبت') entry.countNoHomework += 1;
+    });
+
+    byStudentKey.forEach(entry => {
+      entry.sessions.sort((a, b) => (b.sessionDate || '').localeCompare(a.sessionDate || ''));
+      entry.bonusAmount = entry.countA * bonusA + entry.countB * bonusB + entry.countC * bonusC;
+    });
+
+    // Build displayed rows based on filteredStudents (+ any unmatched students who actually have grades in range & match filters)
+    const rows: StudentCounselingSummary[] = [];
+    const includedIds = new Set<string>();
+
+    filteredStudents.forEach(st => {
+      includedIds.add(st.id);
+      const found = byStudentKey.get(st.id);
+      if (found) {
+        rows.push(found);
+      } else {
+        rows.push({
+          studentId: st.id,
+          studentName: st.name,
+          grade: st.grade || '-',
+          nationalId: st.nationalId,
+          sessions: [],
+          sessionsCount: 0,
+          countA: 0,
+          countB: 0,
+          countC: 0,
+          countD: 0,
+          countAbsence: 0,
+          countNoHomework: 0,
+          bonusAmount: 0
+        });
+      }
+    });
+
+    // Include any extra students from counseling_session_grades in range who weren't in filteredStudents (e.g., archived/legacy ID)
+    const normalizeGradeVal = (val?: string) =>
+      toPersianDigits(String(val || '').replace(/ي/g, 'ی').replace(/ك/g, 'ک').trim());
+    const targetGradeNorm = normalizeGradeVal(gradeFilter);
+    const q = searchQuery.trim().toLowerCase();
+
+    byStudentKey.forEach((entry, key) => {
+      if (includedIds.has(key)) return;
+      if (gradeFilter !== 'all') {
+        const entryGradeNorm = normalizeGradeVal(entry.grade);
+        const digits = ['۱۰', '۷', '۸', '۹', '۱', '۲', '۳', '۴', '۵', '۶'];
+        const matchedDigit = entryGradeNorm === targetGradeNorm || digits.some(d => targetGradeNorm.includes(d) && entryGradeNorm.includes(d));
+        if (!matchedDigit) return;
+      }
+      if (q && !(entry.studentName || '').toLowerCase().includes(q)) return;
+      rows.push(entry);
+    });
+
+    const visibleRows = counselingOnlyEvaluated ? rows.filter(r => r.sessionsCount > 0) : rows;
+
+    const totals = rows.reduce(
+      (acc, r) => ({
+        totalSessions: acc.totalSessions + r.sessionsCount,
+        evaluatedStudentsCount: acc.evaluatedStudentsCount + (r.sessionsCount > 0 ? 1 : 0),
+        totalA: acc.totalA + r.countA,
+        totalB: acc.totalB + r.countB,
+        totalC: acc.totalC + r.countC,
+        totalD: acc.totalD + r.countD,
+        totalAbsence: acc.totalAbsence + r.countAbsence,
+        totalNoHomework: acc.totalNoHomework + r.countNoHomework,
+        totalBonus: acc.totalBonus + r.bonusAmount
+      }),
+      {
+        totalSessions: 0,
+        evaluatedStudentsCount: 0,
+        totalA: 0,
+        totalB: 0,
+        totalC: 0,
+        totalD: 0,
+        totalAbsence: 0,
+        totalNoHomework: 0,
+        totalBonus: 0
+      }
+    );
+
+    return {
+      rows: visibleRows,
+      allRowsCount: rows.length,
+      totals
+    };
+  }, [counselingGrades, students, filteredStudents, normStart, normEnd, settings, counselingOnlyEvaluated, gradeFilter, searchQuery]);
 
   // Unique Grades for dropdown
   const uniqueGrades = useMemo(() => {
@@ -753,31 +1124,84 @@ export const ActivityInfoTabbedView: React.FC<ActivityInfoTabbedViewProps> = ({
       )}
 
       {/* Tab 3: حضور و غیاب */}
-      {activeTab === 'attendance' && (
-        isAdminMobile ? (
-          <div className="space-y-2.5">
-            <div className="bg-white rounded-[20px] border border-slate-200 p-3.5 flex items-center justify-between text-xs">
-              <span className="font-black text-slate-800">تفکیک حضور و غیاب بازه</span>
-              <span className="font-mono tabular-nums font-bold text-indigo-700">{attendanceLogsInRange.length} جلسه</span>
-            </div>
-            {filteredStudents.map((st, idx) => {
-              let presentCount = 0;
-              let unexcusedCount = 0;
-              let excusedCount = 0;
-              let lateMinutesTotal = 0;
+      {activeTab === 'attendance' && (() => {
+        const totals = filteredStudents.reduce(
+          (acc, st) => {
+            const r = attendanceRangeReport[st.id];
+            if (r) {
+              acc.present += r.presentCount;
+              acc.unexcused += r.unexcusedCount;
+              acc.excused += r.excusedCount;
+              acc.late += r.lateCount;
+              acc.lateConverted += r.lateConvertedAbsences;
+              acc.unspecified += r.unspecifiedCount;
+            }
+            return acc;
+          },
+          { present: 0, unexcused: 0, excused: 0, late: 0, lateConverted: 0, unspecified: 0 }
+        );
 
-              attendanceLogsInRange.forEach(session => {
-                const rec = session.students?.find(s => s.studentId === st.id);
-                if (rec) {
-                  if (rec.status === 'present') presentCount++;
-                  else if (rec.status === 'absent') {
-                    if (rec.isExcused) excusedCount++;
-                    else unexcusedCount++;
-                  } else if (rec.status === 'late') {
-                    lateMinutesTotal += rec.lateMinutes || 0;
-                  }
-                }
-              });
+        const formatStatusLabel = (status: string, lateMins?: number, ignoredLate?: boolean, converted?: boolean) => {
+          if (status === 'present') return ignoredLate ? `حاضر (تاخیر ${lateMins || 0}د بی‌اثر)` : 'حاضر';
+          if (status === 'absent') return converted ? `غیبت (تاخیر ${lateMins || 0}د بالای سقف)` : 'غیبت غیرموجه';
+          if (status === 'excused') return 'غیبت موجه';
+          if (status === 'late') return `تاخیر (${lateMins || 0} دقیقه)`;
+          return 'نامشخص';
+        };
+
+        return isAdminMobile ? (
+          <div className="space-y-2.5">
+            <div className="bg-white rounded-[20px] border border-slate-200 p-3.5 space-y-2.5 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <span className="font-black text-slate-800 block">تفکیک حضور و غیاب بازه</span>
+                  <span className="text-[10px] text-slate-500 font-mono">{startDate} تا {endDate}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono tabular-nums font-bold text-indigo-700">{attendanceLogsInRange.length} جلسه</span>
+                  {onRefreshAttendance && (
+                    <button
+                      type="button"
+                      onClick={onRefreshAttendance}
+                      disabled={isRefreshingAttendance}
+                      className="p-1.5 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200 cursor-pointer disabled:opacity-50"
+                      title="بروزرسانی آمار حضور و غیاب"
+                    >
+                      <RefreshCw size={13} className={isRefreshingAttendance ? 'animate-spin' : ''} />
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="grid grid-cols-4 gap-1.5 text-center text-[10px] pt-2 border-t border-slate-100">
+                <div className="bg-emerald-50 rounded-xl p-1.5">
+                  <span className="text-slate-500 block">حاضر</span>
+                  <span className="font-mono font-black text-emerald-700">{totals.present}</span>
+                </div>
+                <div className="bg-rose-50 rounded-xl p-1.5">
+                  <span className="text-slate-500 block">غیرموجه</span>
+                  <span className="font-mono font-black text-rose-700">{totals.unexcused}</span>
+                </div>
+                <div className="bg-indigo-50 rounded-xl p-1.5">
+                  <span className="text-slate-500 block">موجه</span>
+                  <span className="font-mono font-black text-indigo-700">{totals.excused}</span>
+                </div>
+                <div className="bg-amber-50 rounded-xl p-1.5">
+                  <span className="text-slate-500 block">تاخیر</span>
+                  <span className="font-mono font-black text-amber-700">{totals.late}</span>
+                </div>
+              </div>
+            </div>
+
+            {filteredStudents.map((st, idx) => {
+              const row = attendanceRangeReport[st.id];
+              const presentCount = row?.presentCount || 0;
+              const unexcusedCount = row?.unexcusedCount || 0;
+              const lateConverted = row?.lateConvertedAbsences || 0;
+              const excusedCount = row?.excusedCount || 0;
+              const lateCount = row?.lateCount || 0;
+              const lateMinutesTotal = row?.lateMinutesTotal || 0;
+              const unspecifiedCount = row?.unspecifiedCount || 0;
+              const isExpanded = expandedAttendanceStudentId === st.id;
 
               return (
                 <div key={st.id} className="bg-white rounded-[20px] border border-slate-200 p-3.5 shadow-2xs space-y-2.5">
@@ -786,40 +1210,130 @@ export const ActivityInfoTabbedView: React.FC<ActivityInfoTabbedViewProps> = ({
                       <h5 className="text-xs font-black text-slate-900 truncate">{idx + 1}. {st.name}</h5>
                       <span className="text-[11px] text-slate-500">{st.grade || '-'}</span>
                     </div>
-                    <span className={cn(
-                      "text-[11px] font-black",
-                      unexcusedCount > 0 ? "text-rose-700" : "text-emerald-700"
-                    )}>
-                      {unexcusedCount > 0 ? `${unexcusedCount} جلسه کسر` : 'بدون جریمه'}
-                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className={cn(
+                        "text-[11px] font-black",
+                        unexcusedCount > 0 ? "text-rose-700" : "text-emerald-700"
+                      )}>
+                        {unexcusedCount > 0 ? `${unexcusedCount} جلسه کسر` : 'بدون جریمه'}
+                      </span>
+                      {(row?.sessions?.length || 0) > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setExpandedAttendanceStudentId(isExpanded ? null : st.id)}
+                          className="p-1 rounded-lg bg-slate-100 text-slate-600 cursor-pointer"
+                        >
+                          {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="grid grid-cols-4 gap-1.5 text-center text-[11px] pt-2 border-t border-slate-100">
+                  <div className="grid grid-cols-5 gap-1 text-center text-[10.5px] pt-2 border-t border-slate-100">
                     <div className="bg-emerald-50 rounded-xl p-1.5">
-                      <span className="text-slate-500 block text-[10px]">حاضر</span>
+                      <span className="text-slate-500 block text-[9.5px]">حاضر</span>
                       <span className="font-mono tabular-nums font-black text-emerald-700">{presentCount}</span>
                     </div>
                     <div className="bg-rose-50 rounded-xl p-1.5">
-                      <span className="text-slate-500 block text-[10px]">غیرموجه</span>
+                      <span className="text-slate-500 block text-[9.5px]">غیرموجه</span>
                       <span className="font-mono tabular-nums font-black text-rose-700">{unexcusedCount}</span>
+                      {lateConverted > 0 && (
+                        <span className="block text-[8.5px] font-bold text-amber-700">+{lateConverted} تاخیر</span>
+                      )}
+                    </div>
+                    <div className="bg-indigo-50 rounded-xl p-1.5">
+                      <span className="text-slate-500 block text-[9.5px]">موجه</span>
+                      <span className="font-mono tabular-nums font-black text-indigo-700">{excusedCount}</span>
                     </div>
                     <div className="bg-amber-50 rounded-xl p-1.5">
-                      <span className="text-slate-500 block text-[10px]">موجه</span>
-                      <span className="font-mono tabular-nums font-black text-amber-700">{excusedCount}</span>
+                      <span className="text-slate-500 block text-[9.5px]">تاخیر</span>
+                      <span className="font-mono tabular-nums font-black text-amber-700">{lateCount}</span>
+                      {lateMinutesTotal > 0 && (
+                        <span className="block text-[8.5px] text-amber-800 font-mono">{lateMinutesTotal}د</span>
+                      )}
                     </div>
                     <div className="bg-slate-50 rounded-xl p-1.5">
-                      <span className="text-slate-500 block text-[10px]">تاخیر</span>
-                      <span className="font-mono tabular-nums font-black text-slate-700">{lateMinutesTotal}m</span>
+                      <span className="text-slate-500 block text-[9.5px]">نامشخص</span>
+                      <span className="font-mono tabular-nums font-black text-slate-600">{unspecifiedCount}</span>
                     </div>
                   </div>
+
+                  {isExpanded && row && row.sessions.length > 0 && (
+                    <div className="pt-2 border-t border-slate-100 space-y-1">
+                      {row.sessions.map((sess, sIdx) => (
+                        <div key={sIdx} className="flex items-center justify-between text-[10.5px] bg-slate-50 rounded-lg px-2 py-1">
+                          <span className="text-slate-700 font-bold truncate max-w-[55%]">{sess.programTitle} <span className="font-mono text-slate-400">({sess.date})</span></span>
+                          <span className={cn(
+                            "font-bold px-1.5 py-0.5 rounded",
+                            sess.effectiveStatus === 'present' ? "bg-emerald-100 text-emerald-800" :
+                            sess.effectiveStatus === 'absent' ? "bg-rose-100 text-rose-800" :
+                            sess.effectiveStatus === 'excused' ? "bg-indigo-100 text-indigo-800" :
+                            sess.effectiveStatus === 'late' ? "bg-amber-100 text-amber-800" :
+                            "bg-slate-200 text-slate-700"
+                          )}>
+                            {formatStatusLabel(sess.effectiveStatus, sess.lateMinutes, sess.ignoredLate, sess.lateConvertedToAbsence)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
         ) : (
-          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs space-y-2">
-            <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-              <h4 className="text-xs font-bold text-slate-800">تفکیک حضور و غیاب طلاب در بازه زمانی انتخابی</h4>
-              <span className="text-[11px] text-slate-500 font-mono">تعداد کل جلسات ثبت شده در این بازه: {attendanceLogsInRange.length}</span>
+          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs space-y-0">
+            <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h4 className="text-xs font-black text-slate-800">تفکیک حضور و غیاب طلاب در بازه زمانی انتخابی ({startDate} تا {endDate})</h4>
+                <p className="text-[10.5px] text-slate-500 mt-0.5">
+                  ضوابط فعال: تاخیر زیر {attendanceRules.minLateMinutes} دقیقه بی‌اثر
+                  {attendanceRules.maxLateAsAbsenceMinutes > 0 ? ` • تاخیر بالای ${attendanceRules.maxLateAsAbsenceMinutes} دقیقه = غیبت` : ''}
+                  {attendanceRules.latesPerAbsence > 0 ? ` • هر ${attendanceRules.latesPerAbsence} تاخیر = ۱ غیبت` : ''}
+                </p>
+              </div>
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <span className="text-[11px] text-slate-600 font-mono bg-white px-2.5 py-1 rounded-lg border border-slate-200 font-bold">
+                  جلسات معتبر بازه: {attendanceLogsInRange.length}
+                </span>
+                {onRefreshAttendance && (
+                  <button
+                    type="button"
+                    onClick={onRefreshAttendance}
+                    disabled={isRefreshingAttendance}
+                    className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[11px] font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-colors"
+                  >
+                    <RefreshCw size={13} className={isRefreshingAttendance ? 'animate-spin' : ''} />
+                    <span>{isRefreshingAttendance ? 'در حال همگام‌سازی...' : 'بروزرسانی از سرور'}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* KPI Summary Strip */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 p-3 bg-slate-50/50 border-b border-slate-100 text-center text-xs">
+              <div className="bg-emerald-50/70 border border-emerald-100 rounded-xl p-2">
+                <span className="text-[10px] text-emerald-700 font-bold block">کل حضور</span>
+                <span className="font-mono font-black text-emerald-800 text-sm">{totals.present}</span>
+              </div>
+              <div className="bg-rose-50/70 border border-rose-100 rounded-xl p-2">
+                <span className="text-[10px] text-rose-700 font-bold block">کل غیبت غیرموجه (موثر)</span>
+                <span className="font-mono font-black text-rose-800 text-sm">{totals.unexcused}</span>
+                {totals.lateConverted > 0 && (
+                  <span className="block text-[9.5px] text-amber-700 font-bold">شامل +{totals.lateConverted} معادل تاخیر</span>
+                )}
+              </div>
+              <div className="bg-indigo-50/70 border border-indigo-100 rounded-xl p-2">
+                <span className="text-[10px] text-indigo-700 font-bold block">کل غیبت موجه</span>
+                <span className="font-mono font-black text-indigo-800 text-sm">{totals.excused}</span>
+              </div>
+              <div className="bg-amber-50/70 border border-amber-100 rounded-xl p-2">
+                <span className="text-[10px] text-amber-700 font-bold block">کل تاخیر معتبر</span>
+                <span className="font-mono font-black text-amber-800 text-sm">{totals.late}</span>
+              </div>
+              <div className="bg-slate-100/70 border border-slate-200 rounded-xl p-2">
+                <span className="text-[10px] text-slate-600 font-bold block">کل نامشخص</span>
+                <span className="font-mono font-black text-slate-700 text-sm">{totals.unspecified}</span>
+              </div>
             </div>
 
             <div className="overflow-x-auto">
@@ -829,60 +1343,117 @@ export const ActivityInfoTabbedView: React.FC<ActivityInfoTabbedViewProps> = ({
                     <th className="p-3">ردیف</th>
                     <th className="p-3">نام طلبه</th>
                     <th className="p-3">پایه</th>
-                    <th className="p-3 text-center">حاضر</th>
-                    <th className="p-3 text-center">غیبت غیرموجه</th>
-                    <th className="p-3 text-center">غیبت موجه</th>
-                    <th className="p-3 text-center">تاخیر (دقیقه)</th>
+                    <th className="p-3 text-center text-emerald-700">حاضر</th>
+                    <th className="p-3 text-center text-rose-700">غیبت غیرموجه</th>
+                    <th className="p-3 text-center text-indigo-700">غیبت موجه</th>
+                    <th className="p-3 text-center text-amber-700">تاخیر (تعداد / دقیقه)</th>
+                    <th className="p-3 text-center text-slate-600">نامشخص</th>
                     <th className="p-3 text-center">مشمول جریمه؟</th>
+                    <th className="p-3 text-center">ریز جلسات</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredStudents.map((st, idx) => {
-                    let presentCount = 0;
-                    let unexcusedCount = 0;
-                    let excusedCount = 0;
-                    let lateMinutesTotal = 0;
-
-                    attendanceLogsInRange.forEach(session => {
-                      const rec = session.students?.find(s => s.studentId === st.id);
-                      if (rec) {
-                        if (rec.status === 'present') presentCount++;
-                        else if (rec.status === 'absent') {
-                          if (rec.isExcused) excusedCount++;
-                          else unexcusedCount++;
-                        } else if (rec.status === 'late') {
-                          lateMinutesTotal += rec.lateMinutes || 0;
-                        }
-                      }
-                    });
+                    const row = attendanceRangeReport[st.id];
+                    const presentCount = row?.presentCount || 0;
+                    const unexcusedCount = row?.unexcusedCount || 0;
+                    const lateConverted = row?.lateConvertedAbsences || 0;
+                    const excusedCount = row?.excusedCount || 0;
+                    const lateCount = row?.lateCount || 0;
+                    const lateMinutesTotal = row?.lateMinutesTotal || 0;
+                    const unspecifiedCount = row?.unspecifiedCount || 0;
+                    const isExpanded = expandedAttendanceStudentId === st.id;
 
                     return (
-                      <tr key={st.id} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="p-3 text-slate-400 font-mono">{idx + 1}</td>
-                        <td className="p-3 font-bold text-slate-900">{st.name}</td>
-                        <td className="p-3 text-slate-600">{st.grade || '-'}</td>
-                        <td className="p-3 text-center font-bold text-emerald-600 font-mono">{presentCount}</td>
-                        <td className="p-3 text-center font-bold text-rose-600 font-mono">{unexcusedCount}</td>
-                        <td className="p-3 text-center font-bold text-amber-600 font-mono">{excusedCount}</td>
-                        <td className="p-3 text-center font-mono text-slate-700">{lateMinutesTotal}m</td>
-                        <td className="p-3 text-center">
-                          {unexcusedCount > 0 ? (
-                            <span className="px-2 py-0.5 bg-rose-50 text-rose-700 rounded-md font-bold text-[10px]">
-                              {unexcusedCount} جلسه کسر
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 text-[10px]">بدون جریمه</span>
-                          )}
-                        </td>
-                      </tr>
+                      <React.Fragment key={st.id}>
+                        <tr className="hover:bg-slate-50/80 transition-colors">
+                          <td className="p-3 text-slate-400 font-mono">{idx + 1}</td>
+                          <td className="p-3 font-bold text-slate-900">{st.name}</td>
+                          <td className="p-3 text-slate-600">{st.grade || '-'}</td>
+                          <td className="p-3 text-center font-bold text-emerald-600 font-mono">{presentCount}</td>
+                          <td className="p-3 text-center font-bold text-rose-600 font-mono">
+                            <div className="inline-flex flex-col items-center gap-0.5">
+                              <span>{unexcusedCount}</span>
+                              {lateConverted > 0 && (
+                                <span className="text-[9.5px] font-bold px-1.5 py-0.2 rounded bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap">
+                                  شامل +{lateConverted} از تاخیر
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-3 text-center font-bold text-indigo-600 font-mono">{excusedCount}</td>
+                          <td className="p-3 text-center font-mono text-amber-700 font-bold">
+                            {lateCount > 0 ? (
+                              <div className="inline-flex flex-col items-center">
+                                <span>{lateCount} مورد</span>
+                                {lateMinutesTotal > 0 && (
+                                  <span className="text-[10px] text-slate-500 font-normal">({lateMinutesTotal} دقیقه)</span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 font-normal">0</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-center font-mono text-slate-500 font-bold">{unspecifiedCount}</td>
+                          <td className="p-3 text-center">
+                            {unexcusedCount > 0 ? (
+                              <span className="px-2 py-0.5 bg-rose-50 text-rose-700 rounded-md font-bold text-[10px] border border-rose-200">
+                                {unexcusedCount} جلسه کسر
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 text-[10px]">بدون جریمه</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-center">
+                            {(row?.sessions?.length || 0) > 0 ? (
+                              <button
+                                type="button"
+                                onClick={() => setExpandedAttendanceStudentId(isExpanded ? null : st.id)}
+                                className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer transition-colors"
+                              >
+                                <span>{row.sessions.length} جلسه</span>
+                                {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                              </button>
+                            ) : (
+                              <span className="text-slate-300 text-[10px]">---</span>
+                            )}
+                          </td>
+                        </tr>
+                        {isExpanded && row && row.sessions.length > 0 && (
+                          <tr className="bg-slate-50/80">
+                            <td colSpan={10} className="p-3">
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                                {row.sessions.map((sess, sIdx) => (
+                                  <div key={sIdx} className="bg-white border border-slate-200 rounded-xl p-2.5 flex items-center justify-between gap-2 text-[11px]">
+                                    <div className="min-w-0">
+                                      <div className="font-bold text-slate-800 truncate">{sess.programTitle}</div>
+                                      <div className="text-[10px] text-slate-400 font-mono">{sess.date}</div>
+                                    </div>
+                                    <span className={cn(
+                                      "px-2 py-0.5 rounded-lg text-[10px] font-bold shrink-0",
+                                      sess.effectiveStatus === 'present' ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
+                                      sess.effectiveStatus === 'absent' ? "bg-rose-50 text-rose-700 border border-rose-200" :
+                                      sess.effectiveStatus === 'excused' ? "bg-indigo-50 text-indigo-700 border border-indigo-200" :
+                                      sess.effectiveStatus === 'late' ? "bg-amber-50 text-amber-800 border border-amber-200" :
+                                      "bg-slate-100 text-slate-600 border border-slate-200"
+                                    )}>
+                                      {formatStatusLabel(sess.effectiveStatus, sess.lateMinutes, sess.ignoredLate, sess.lateConvertedToAbsence)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     );
                   })}
                 </tbody>
               </table>
             </div>
           </div>
-        )
-      )}
+        );
+      })()}
 
       {/* Tab 4: آمار نهار و شام */}
       {activeTab === 'meals' && (
@@ -1004,127 +1575,435 @@ export const ActivityInfoTabbedView: React.FC<ActivityInfoTabbedViewProps> = ({
       )}
 
       {/* Tab 5: ارزیابی کلاس مشاوره */}
-      {activeTab === 'counseling' && (
-        isAdminMobile ? (
-          <div className="space-y-2.5">
-            {filteredStudents.map((st, idx) => {
-              let countA = 0, countB = 0, countC = 0, countD = 0;
-              counselingGrades.forEach(g => {
-                const normGDate = normalizeShamsiDateStr(g.sessionDate);
-                const inRange = (!normStart || normGDate >= normStart) && (!normEnd || normGDate <= normEnd);
-                if (g.studentId === st.id && inRange) {
-                  const pScore = g.participationScore || (g as any).score;
-                  if (pScore === 'الف') countA++;
-                  else if (pScore === 'ب') countB++;
-                  else if (pScore === 'ج') countC++;
-                  else if (pScore === 'د') countD++;
-                  const rScore = g.researchScore;
-                  if (rScore === 'الف') countA++;
-                  else if (rScore === 'ب') countB++;
-                  else if (rScore === 'ج') countC++;
-                  else if (rScore === 'د') countD++;
-                }
-              });
+      {activeTab === 'counseling' && (() => {
+        const { rows: counselingRows, totals: cTotals } = counselingRangeReport;
 
-              return (
-                <div key={st.id} className="bg-white rounded-[20px] border border-slate-200 p-3.5 shadow-2xs space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <h5 className="text-xs font-black text-slate-900 truncate">{idx + 1}. {st.name}</h5>
-                      <span className="text-[11px] text-slate-500">{st.grade || '-'}</span>
-                    </div>
-                    <span className={cn("text-[11px] font-black", countA + countB > 0 ? "text-emerald-700" : "text-slate-400")}>
-                      {countA + countB > 0 ? `${countA + countB} نمره عالی` : 'فاقد تشویقی'}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-4 gap-1.5 text-center text-[11px] pt-2 border-t border-slate-100">
-                    <div className="bg-emerald-50 rounded-xl p-1.5">
-                      <span className="text-slate-500 block text-[10px]">الف</span>
-                      <span className="font-mono tabular-nums font-black text-emerald-700">{countA}</span>
-                    </div>
-                    <div className="bg-indigo-50 rounded-xl p-1.5">
-                      <span className="text-slate-500 block text-[10px]">ب</span>
-                      <span className="font-mono tabular-nums font-black text-indigo-700">{countB}</span>
-                    </div>
-                    <div className="bg-amber-50 rounded-xl p-1.5">
-                      <span className="text-slate-500 block text-[10px]">ج</span>
-                      <span className="font-mono tabular-nums font-black text-amber-700">{countC}</span>
-                    </div>
-                    <div className="bg-rose-50 rounded-xl p-1.5">
-                      <span className="text-slate-500 block text-[10px]">د</span>
-                      <span className="font-mono tabular-nums font-black text-rose-700">{countD}</span>
-                    </div>
-                  </div>
+        const renderScoreBadge = (score?: string, isResearch = false) => {
+          const clean = String(score || '').trim();
+          if (!clean) {
+            return <span className="text-[10px] text-slate-400">—</span>;
+          }
+          const displayLabel = isResearch && clean === 'غیبت' ? 'عدم انجام تکلیف' : clean;
+          const badgeCls =
+            displayLabel === 'الف'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+              : displayLabel === 'ب'
+                ? 'bg-indigo-50 text-indigo-800 border-indigo-200'
+                : displayLabel === 'ج'
+                  ? 'bg-amber-50 text-amber-800 border-amber-200'
+                  : displayLabel === 'د'
+                    ? 'bg-rose-50 text-rose-800 border-rose-200'
+                    : 'bg-slate-100 text-slate-700 border-slate-300';
+          return (
+            <span className={cn('inline-flex items-center px-2 py-0.5 rounded-md border text-[10px] font-black', badgeCls)}>
+              {displayLabel}
+            </span>
+          );
+        };
+
+        return isAdminMobile ? (
+          <div className="space-y-3">
+            {/* Mobile Header & Summary Strip */}
+            <div className="bg-white rounded-[20px] border border-slate-200 p-3.5 shadow-2xs space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h4 className="text-xs font-black text-slate-900">ارزیابی کلاس‌های مشاوره</h4>
+                  <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+                    بازه: {toPersianDigits(normStart || '—')} تا {toPersianDigits(normEnd || '—')}
+                  </p>
                 </div>
-              );
-            })}
+                {onRefreshCounselingGrades && (
+                  <button
+                    type="button"
+                    onClick={onRefreshCounselingGrades}
+                    disabled={isRefreshingCounseling}
+                    className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw size={13} className={cn(isRefreshingCounseling && 'animate-spin')} />
+                    <span>بروزرسانی</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-3 gap-1.5 text-center text-[11px]">
+                <div className="bg-slate-50 rounded-xl p-2 border border-slate-100">
+                  <span className="text-[10px] text-slate-500 block">جلسات ثبت‌شده</span>
+                  <span className="font-mono font-black text-slate-800">{toPersianDigits(cTotals.totalSessions)}</span>
+                </div>
+                <div className="bg-emerald-50 rounded-xl p-2 border border-emerald-100">
+                  <span className="text-[10px] text-emerald-700 block">کل الف / ب</span>
+                  <span className="font-mono font-black text-emerald-800">
+                    {toPersianDigits(cTotals.totalA)} / {toPersianDigits(cTotals.totalB)}
+                  </span>
+                </div>
+                <div className="bg-rose-50 rounded-xl p-2 border border-rose-100">
+                  <span className="text-[10px] text-rose-700 block">غیبت / تکلیف</span>
+                  <span className="font-mono font-black text-rose-800">
+                    {toPersianDigits(cTotals.totalAbsence + cTotals.totalNoHomework)}
+                  </span>
+                </div>
+              </div>
+
+              <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  checked={counselingOnlyEvaluated}
+                  onChange={e => setCounselingOnlyEvaluated(e.target.checked)}
+                  className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                />
+                <span>فقط طلاب دارای ارزیابی در این بازه ({toPersianDigits(cTotals.evaluatedStudentsCount)} نفر)</span>
+              </label>
+            </div>
+
+            {counselingRows.length === 0 ? (
+              <div className="bg-white rounded-[20px] border border-slate-200 p-8 text-center text-xs text-slate-400 font-bold">
+                هیچ ارزیابی مشاوره‌ای برای بازه زمانی انتخابی یافت نشد.
+              </div>
+            ) : (
+              counselingRows.map((row, idx) => {
+                const isExpanded = expandedCounselingStudentId === row.studentId;
+                return (
+                  <div key={row.studentId} className="bg-white rounded-[20px] border border-slate-200 p-3.5 shadow-2xs space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <h5 className="text-xs font-black text-slate-900 truncate">
+                          {toPersianDigits(idx + 1)}. {row.studentName}
+                        </h5>
+                        <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mt-0.5">
+                          <span>{row.grade || '-'}</span>
+                          <span>·</span>
+                          <span className="font-bold text-indigo-700">
+                            {toPersianDigits(row.sessionsCount)} جلسه ارزیابی
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-left shrink-0">
+                        <span className={cn('text-[11px] font-black block', row.bonusAmount > 0 ? 'text-emerald-700' : 'text-slate-400')}>
+                          {row.bonusAmount > 0 ? `+${row.bonusAmount.toLocaleString('fa-IR')} ت` : 'فاقد تشویقی'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-5 gap-1.5 text-center text-[11px] pt-2 border-t border-slate-100">
+                      <div className="bg-emerald-50 rounded-xl p-1.5">
+                        <span className="text-slate-500 block text-[10px]">الف</span>
+                        <span className="font-mono tabular-nums font-black text-emerald-700">{toPersianDigits(row.countA)}</span>
+                      </div>
+                      <div className="bg-indigo-50 rounded-xl p-1.5">
+                        <span className="text-slate-500 block text-[10px]">ب</span>
+                        <span className="font-mono tabular-nums font-black text-indigo-700">{toPersianDigits(row.countB)}</span>
+                      </div>
+                      <div className="bg-amber-50 rounded-xl p-1.5">
+                        <span className="text-slate-500 block text-[10px]">ج</span>
+                        <span className="font-mono tabular-nums font-black text-amber-700">{toPersianDigits(row.countC)}</span>
+                      </div>
+                      <div className="bg-rose-50 rounded-xl p-1.5">
+                        <span className="text-slate-500 block text-[10px]">د</span>
+                        <span className="font-mono tabular-nums font-black text-rose-700">{toPersianDigits(row.countD)}</span>
+                      </div>
+                      <div className="bg-slate-100 rounded-xl p-1.5">
+                        <span className="text-slate-500 block text-[10px]">غیبت</span>
+                        <span className="font-mono tabular-nums font-black text-slate-700">
+                          {toPersianDigits(row.countAbsence + row.countNoHomework)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {row.sessions.length > 0 && (
+                      <div className="pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedCounselingStudentId(isExpanded ? null : row.studentId)}
+                          className="w-full py-1.5 px-3 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-slate-200/80"
+                        >
+                          {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                          <span>{isExpanded ? 'بستن ریز جلسات' : `مشاهده ریز ${toPersianDigits(row.sessions.length)} جلسه`}</span>
+                        </button>
+
+                        {isExpanded && (
+                          <div className="mt-2 space-y-2 pt-2 border-t border-slate-100">
+                            {row.sessions.map(sess => (
+                              <div key={sess.id} className="bg-slate-50/90 rounded-xl p-2.5 border border-slate-200/80 space-y-1.5 text-[11px]">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="font-black text-slate-800 truncate">{sess.courseTitle || 'کلاس مشاوره'}</span>
+                                  <span className="font-mono text-[10px] text-slate-500 shrink-0">{toPersianDigits(sess.sessionDate)}</span>
+                                </div>
+                                <div className="text-[10px] text-slate-500 flex items-center justify-between">
+                                  <span>استاد: {sess.counselorTeacherName || '—'}</span>
+                                  {sess.sessionNumber && <span>{sess.sessionNumber}</span>}
+                                </div>
+                                <div className="flex items-center gap-3 pt-1">
+                                  <span className="flex items-center gap-1 text-[10px] text-slate-600">
+                                    مشارکت: {renderScoreBadge(sess.participationScore || (sess as any).score, false)}
+                                  </span>
+                                  <span className="flex items-center gap-1 text-[10px] text-slate-600">
+                                    پژوهش: {renderScoreBadge(sess.researchScore, true)}
+                                  </span>
+                                </div>
+                                {sess.counselorFeedback && (
+                                  <div className="text-[10px] text-slate-600 bg-white rounded-lg p-1.5 border border-slate-200/70 flex items-start gap-1">
+                                    <MessageSquare size={11} className="text-slate-400 mt-0.5 shrink-0" />
+                                    <span>{sess.counselorFeedback}</span>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
           </div>
         ) : (
-          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
-            <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-              <h4 className="text-xs font-bold text-slate-800">تعداد رتبه‌های کسب‌شده در کلاس‌های مشاوره در بازه انتخابی</h4>
+          <div className="space-y-4">
+            {/* Summary KPI Cards for Counseling Evaluations in Selected Range */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs">
+                <span className="text-[11px] font-bold text-slate-500 block">کل جلسات ثبت‌شده</span>
+                <div className="text-base font-black text-slate-900 font-mono mt-1">
+                  {toPersianDigits(cTotals.totalSessions)} جلسه
+                </div>
+              </div>
+              <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs">
+                <span className="text-[11px] font-bold text-slate-500 block">طلاب ارزیابی‌شده</span>
+                <div className="text-base font-black text-indigo-700 font-mono mt-1">
+                  {toPersianDigits(cTotals.evaluatedStudentsCount)} نفر
+                </div>
+              </div>
+              <div className="bg-white p-3.5 rounded-2xl border border-emerald-200/80 shadow-2xs">
+                <span className="text-[11px] font-bold text-emerald-700 block">مجموع رتبه الف</span>
+                <div className="text-base font-black text-emerald-700 font-mono mt-1">
+                  {toPersianDigits(cTotals.totalA)} مورد
+                </div>
+              </div>
+              <div className="bg-white p-3.5 rounded-2xl border border-indigo-200/80 shadow-2xs">
+                <span className="text-[11px] font-bold text-indigo-700 block">مجموع رتبه ب</span>
+                <div className="text-base font-black text-indigo-700 font-mono mt-1">
+                  {toPersianDigits(cTotals.totalB)} مورد
+                </div>
+              </div>
+              <div className="bg-white p-3.5 rounded-2xl border border-amber-200/80 shadow-2xs">
+                <span className="text-[11px] font-bold text-amber-700 block">رتبه‌های ج و د</span>
+                <div className="text-base font-black text-amber-700 font-mono mt-1">
+                  {toPersianDigits(cTotals.totalC)} ج · {toPersianDigits(cTotals.totalD)} د
+                </div>
+              </div>
+              <div className="bg-white p-3.5 rounded-2xl border border-rose-200/80 shadow-2xs">
+                <span className="text-[11px] font-bold text-rose-700 block">غیبت / بدون تکلیف</span>
+                <div className="text-base font-black text-rose-700 font-mono mt-1">
+                  {toPersianDigits(cTotals.totalAbsence)} / {toPersianDigits(cTotals.totalNoHomework)}
+                </div>
+              </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-right text-xs">
-                <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 font-bold">
-                  <tr>
-                    <th className="p-3">ردیف</th>
-                    <th className="p-3">نام طلبه</th>
-                    <th className="p-3">پایه</th>
-                    <th className="p-3 text-center">رتبه الف</th>
-                    <th className="p-3 text-center">رتبه ب</th>
-                    <th className="p-3 text-center">رتبه ج</th>
-                    <th className="p-3 text-center">رتبه د</th>
-                    <th className="p-3 text-left">امتیاز تشویقی مشاوره</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredStudents.map((st, idx) => {
-                    let countA = 0;
-                    let countB = 0;
-                    let countC = 0;
-                    let countD = 0;
+            {/* Main Table Card */}
+            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
+              <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <h4 className="text-xs font-black text-slate-800">
+                    اطلاعات کامل ارزیابی کلاس‌های مشاوره طلاب در بازه انتخابی
+                  </h4>
+                  <span className="inline-flex items-center gap-1 text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200">
+                    <Calendar size={12} />
+                    <span>از {toPersianDigits(normStart || '—')} تا {toPersianDigits(normEnd || '—')}</span>
+                  </span>
+                </div>
 
-                    counselingGrades.forEach(g => {
-                      const normGDate = normalizeShamsiDateStr(g.sessionDate);
-                      const inRange = (!normStart || normGDate >= normStart) && (!normEnd || normGDate <= normEnd);
-                      if (g.studentId === st.id && inRange) {
-                        const pScore = g.participationScore || (g as any).score;
-                        if (pScore === 'الف') countA++;
-                        else if (pScore === 'ب') countB++;
-                        else if (pScore === 'ج') countC++;
-                        else if (pScore === 'د') countD++;
+                <div className="flex items-center gap-3">
+                  <label className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={counselingOnlyEvaluated}
+                      onChange={e => setCounselingOnlyEvaluated(e.target.checked)}
+                      className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                    />
+                    <span>فقط طلاب دارای ارزیابی ({toPersianDigits(cTotals.evaluatedStudentsCount)})</span>
+                  </label>
 
-                        const rScore = g.researchScore;
-                        if (rScore === 'الف') countA++;
-                        else if (rScore === 'ب') countB++;
-                        else if (rScore === 'ج') countC++;
-                        else if (rScore === 'د') countD++;
-                      }
-                    });
+                  {onRefreshCounselingGrades && (
+                    <button
+                      type="button"
+                      onClick={onRefreshCounselingGrades}
+                      disabled={isRefreshingCounseling}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
+                      title="بروزرسانی لحظه‌ای ارزیابی‌های ثبت‌شده اساتید از سرور"
+                    >
+                      <RefreshCw size={13} className={cn(isRefreshingCounseling && 'animate-spin')} />
+                      <span>{isRefreshingCounseling ? 'در حال دریافت...' : 'بروزرسانی ارزیابی‌ها'}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
 
-                    return (
-                      <tr key={st.id} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="p-3 text-slate-400 font-mono">{idx + 1}</td>
-                        <td className="p-3 font-bold text-slate-900">{st.name}</td>
-                        <td className="p-3 text-slate-600">{st.grade || '-'}</td>
-                        <td className="p-3 text-center font-bold text-emerald-600 font-mono">{countA}</td>
-                        <td className="p-3 text-center font-bold text-indigo-600 font-mono">{countB}</td>
-                        <td className="p-3 text-center font-bold text-amber-600 font-mono">{countC}</td>
-                        <td className="p-3 text-center font-bold text-rose-600 font-mono">{countD}</td>
-                        <td className="p-3 text-left font-mono font-bold text-emerald-700">
-                          {countA + countB > 0 ? `${countA + countB} نمره عالی` : 'فاقد تشویقی'}
+              <div className="overflow-x-auto">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 font-bold">
+                    <tr>
+                      <th className="p-3">ردیف</th>
+                      <th className="p-3">نام طلبه</th>
+                      <th className="p-3">پایه</th>
+                      <th className="p-3 text-center">تعداد جلسات</th>
+                      <th className="p-3 text-center text-emerald-700">رتبه الف</th>
+                      <th className="p-3 text-center text-indigo-700">رتبه ب</th>
+                      <th className="p-3 text-center text-amber-700">رتبه ج</th>
+                      <th className="p-3 text-center text-rose-700">رتبه د</th>
+                      <th className="p-3 text-center text-slate-600">غیبت / بدون تکلیف</th>
+                      <th className="p-3 text-left">پاداش و امتیاز مشاوره</th>
+                      <th className="p-3 text-center">ریز ارزیابی‌ها</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {counselingRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={11} className="p-8 text-center text-slate-400 font-bold">
+                          در بازه زمانی از {toPersianDigits(normStart || '—')} تا {toPersianDigits(normEnd || '—')} هیچ رکورد ارزیابی کلاس مشاوره‌ای برای طلاب مطابق فیلتر یافت نشد.
                         </td>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    ) : (
+                      counselingRows.map((row, idx) => {
+                        const isExpanded = expandedCounselingStudentId === row.studentId;
+                        return (
+                          <React.Fragment key={row.studentId}>
+                            <tr
+                              className={cn(
+                                'hover:bg-slate-50/80 transition-colors',
+                                row.sessionsCount > 0 && 'cursor-pointer',
+                                isExpanded && 'bg-emerald-50/40'
+                              )}
+                              onClick={() => {
+                                if (row.sessionsCount > 0) {
+                                  setExpandedCounselingStudentId(isExpanded ? null : row.studentId);
+                                }
+                              }}
+                            >
+                              <td className="p-3 text-slate-400 font-mono">{toPersianDigits(idx + 1)}</td>
+                              <td className="p-3 font-bold text-slate-900">{row.studentName}</td>
+                              <td className="p-3 text-slate-600">{row.grade || '-'}</td>
+                              <td className="p-3 text-center font-mono font-bold">
+                                <span className={cn(
+                                  'px-2 py-0.5 rounded-lg text-[11px]',
+                                  row.sessionsCount > 0 ? 'bg-indigo-50 text-indigo-700 border border-indigo-200/70' : 'text-slate-400'
+                                )}>
+                                  {toPersianDigits(row.sessionsCount)} جلسه
+                                </span>
+                              </td>
+                              <td className="p-3 text-center font-black text-emerald-600 font-mono">{toPersianDigits(row.countA)}</td>
+                              <td className="p-3 text-center font-black text-indigo-600 font-mono">{toPersianDigits(row.countB)}</td>
+                              <td className="p-3 text-center font-black text-amber-600 font-mono">{toPersianDigits(row.countC)}</td>
+                              <td className="p-3 text-center font-black text-rose-600 font-mono">{toPersianDigits(row.countD)}</td>
+                              <td className="p-3 text-center font-mono text-slate-600">
+                                {row.countAbsence > 0 || row.countNoHomework > 0 ? (
+                                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-200/70">
+                                    {toPersianDigits(row.countAbsence)} غ · {toPersianDigits(row.countNoHomework)} ت
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-300">۰</span>
+                                )}
+                              </td>
+                              <td className="p-3 text-left font-mono">
+                                {row.bonusAmount > 0 ? (
+                                  <div className="flex flex-col items-end">
+                                    <span className="font-black text-emerald-700">+{row.bonusAmount.toLocaleString('fa-IR')} تومان</span>
+                                    <span className="text-[10px] text-slate-500">
+                                      {toPersianDigits(row.countA + row.countB)} نمره عالی
+                                    </span>
+                                  </div>
+                                ) : row.countA + row.countB > 0 ? (
+                                  <span className="font-bold text-emerald-700">{toPersianDigits(row.countA + row.countB)} نمره عالی</span>
+                                ) : (
+                                  <span className="text-slate-400 font-normal">فاقد تشویقی</span>
+                                )}
+                              </td>
+                              <td className="p-3 text-center">
+                                {row.sessionsCount > 0 ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setExpandedCounselingStudentId(isExpanded ? null : row.studentId);
+                                    }}
+                                    className={cn(
+                                      'inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer border',
+                                      isExpanded
+                                        ? 'bg-emerald-600 text-white border-emerald-700'
+                                        : 'bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 border-slate-200'
+                                    )}
+                                  >
+                                    {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                                    <span>{isExpanded ? 'بستن' : 'ریز جلسات'}</span>
+                                  </button>
+                                ) : (
+                                  <span className="text-[11px] text-slate-300">—</span>
+                                )}
+                              </td>
+                            </tr>
+
+                            {isExpanded && row.sessions.length > 0 && (
+                              <tr className="bg-slate-50/90">
+                                <td colSpan={11} className="p-4 border-t border-emerald-200/70">
+                                  <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
+                                    <div className="px-3.5 py-2.5 bg-emerald-50/70 border-b border-emerald-100 flex items-center justify-between">
+                                      <span className="text-[11px] font-black text-emerald-900">
+                                        ریز ارزیابی‌های ثبت‌شده برای «{row.studentName}» ({toPersianDigits(row.sessions.length)} جلسه در بازه انتخابی)
+                                      </span>
+                                      <span className="text-[10px] font-mono text-emerald-700">
+                                        {toPersianDigits(normStart || '—')} الی {toPersianDigits(normEnd || '—')}
+                                      </span>
+                                    </div>
+                                    <table className="w-full text-right text-[11px]">
+                                      <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 font-bold">
+                                        <tr>
+                                          <th className="py-2 px-3">تاریخ جلسه</th>
+                                          <th className="py-2 px-3">کلاس مشاوره</th>
+                                          <th className="py-2 px-3">استاد مشاور</th>
+                                          <th className="py-2 px-3 text-center">شماره جلسه</th>
+                                          <th className="py-2 px-3 text-center">نمره مشارکت</th>
+                                          <th className="py-2 px-3 text-center">نمره پژوهش و تقریر</th>
+                                          <th className="py-2 px-3">بازخورد و توضیحات استاد</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100">
+                                        {row.sessions.map(sess => (
+                                          <tr key={sess.id} className="hover:bg-slate-50/70">
+                                            <td className="py-2 px-3 font-mono font-bold text-slate-700">{toPersianDigits(sess.sessionDate)}</td>
+                                            <td className="py-2 px-3 font-bold text-slate-900">{sess.courseTitle || 'کلاس مشاوره'}</td>
+                                            <td className="py-2 px-3 text-slate-600">{sess.counselorTeacherName || '—'}</td>
+                                            <td className="py-2 px-3 text-center text-slate-500">{sess.sessionNumber || '—'}</td>
+                                            <td className="py-2 px-3 text-center">
+                                              {renderScoreBadge(sess.participationScore || (sess as any).score, false)}
+                                            </td>
+                                            <td className="py-2 px-3 text-center">
+                                              {renderScoreBadge(sess.researchScore, true)}
+                                            </td>
+                                            <td className="py-2 px-3 text-slate-600 max-w-xs">
+                                              {sess.counselorFeedback ? (
+                                                <span className="leading-relaxed">{sess.counselorFeedback}</span>
+                                              ) : (
+                                                <span className="text-slate-300">—</span>
+                                              )}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
-        )
-      )}
+        );
+      })()}
 
       {/* Tab 6: بدهی‌ها و مطالبات */}
       {activeTab === 'debts' && (

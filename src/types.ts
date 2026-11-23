@@ -114,6 +114,9 @@ export interface AttendanceSettings {
   studentSelfReportingWindowDays?: number; // مهلت ثبت خوداظهاری توسط خود طلبه (روز)
   allowStudentSelfReportingEdit?: boolean; // امکان ویرایش خوداظهاری توسط طلبه در مهلت مقرر
   unrecordedSelfReportingAs?: 'absent' | 'present' | 'unspecified' | 'late'; // نحوه محاسبه «عدم ثبت خوداظهاری» توسط طلبه در آمار (منفک از نماینده)
+  minLateMinutes?: number; // تاخیر کمتر از این عدد (دقیقه) تاخیر محسوب نمی‌شود (پیش‌فرض: ۴ دقیقه)
+  maxLateAsAbsenceMinutes?: number; // تاخیر بیشتر از این عدد (دقیقه) غیبت غیرموجه محسوب می‌شود (پیش‌فرض: ۱۵ دقیقه؛ ۰ = غیرفعال)
+  latesPerAbsence?: number; // هر چند تاخیر معادل ۱ غیبت در گزارش‌های تجمیعی بازه‌ای محسوب شود (پیش‌فرض: ۳؛ ۰ = غیرفعال)
   updatedAt?: string;
   updatedBy?: string;
 }

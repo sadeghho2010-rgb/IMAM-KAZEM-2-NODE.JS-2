@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Users, 
   DollarSign, 
@@ -47,7 +47,15 @@ import { cn } from '../../lib/utils';
 import { localDb } from '../../lib/localDb';
 import { useAuth } from '../../context/AuthContext';
 import { ShamsiDatePicker } from '../ShamsiDatePicker';
-import { getTodayShamsi, normalizeShamsiDateStr } from '../../lib/jalali';
+import { getTodayShamsi, normalizeShamsiDateStr, dateToShamsi } from '../../lib/jalali';
+import {
+  resolveAttendanceRules,
+  classifyAttendanceRecord,
+  computeLateConvertedAbsences,
+  consolidateAttendanceLogs,
+  isDateOfficialHoliday,
+  buildStudentCanonicalMatcher
+} from '../../lib/attendanceRules';
 import { motion, AnimatePresence } from 'motion/react';
 import ActivityInfoTabbedView from './tuition/ActivityInfoTabbedView';
 import { 
@@ -58,6 +66,8 @@ import {
   TuitionPeriod,
   StudyTier,
   AttendanceSessionLog,
+  AttendanceSettings,
+  AcademicHolidayItem,
   PeriodicStudyLog,
   StudyDailyEntry,
   StudyPeriod,
@@ -114,6 +124,8 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
   const [students, setStudents] = useState<Student[]>([]);
   const [profiles, setProfiles] = useState<StudentFinancialProfile[]>([]);
   const [attendanceLogs, setAttendanceLogs] = useState<AttendanceSessionLog[]>([]);
+  const [attendanceSettings, setAttendanceSettings] = useState<AttendanceSettings | null>(null);
+  const [academicHolidays, setAcademicHolidays] = useState<AcademicHolidayItem[]>([]);
   const [studyLogs, setStudyLogs] = useState<PeriodicStudyLog[]>([]);
   const [studyPeriods, setStudyPeriods] = useState<StudyPeriod[]>([]);
   const [counselingGrades, setCounselingGrades] = useState<CounselingSessionGrade[]>([]);
@@ -365,7 +377,9 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
         cCats,
         dAccs,
         eduReports,
-        sDailyEntries
+        sDailyEntries,
+        attSettingsList,
+        holidaysList
       ] = await Promise.all([
         localDb.getDocs<Student>('students'),
         localDb.getDocs<StudentFinancialProfile>('student_financial_profiles'),
@@ -384,7 +398,9 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
         localDb.getDocs<FinanceClaimCategory>('finance_claim_categories'),
         localDb.getDocs<FinanceDestinationAccount>('finance_destination_accounts'),
         localDb.getDocs<EducationFinancialReport>('education_financial_reports'),
-        localDb.getDocs<StudyDailyEntry>('study_daily_entries')
+        localDb.getDocs<StudyDailyEntry>('study_daily_entries'),
+        localDb.getDocs<AttendanceSettings>('attendance_settings'),
+        localDb.getDocs<AcademicHolidayItem>('academic_holidays')
       ]);
 
       setStudents(studs || []);
@@ -393,6 +409,8 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
         setSettings(prev => ({ ...prev, ...settList[0] }));
       }
       setAttendanceLogs(atts || []);
+      setAttendanceSettings(attSettingsList && attSettingsList.length > 0 ? attSettingsList[0] : null);
+      setAcademicHolidays(holidaysList || []);
       setStudyLogs(pLogs || []);
       setStudyPeriods(sPeriods || []);
       setCounselingGrades(cGrades || []);
@@ -421,8 +439,93 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
     }
   };
 
+  const [isRefreshingCounseling, setIsRefreshingCounseling] = useState(false);
+  const [isRefreshingAttendance, setIsRefreshingAttendance] = useState(false);
+
+  const refreshAttendanceFromCloud = useCallback(async (showFeedback = false) => {
+    if (showFeedback) setIsRefreshingAttendance(true);
+    try {
+      await Promise.all([
+        localDb.syncCollectionFromCloud('attendance', true).catch(() => {}),
+        localDb.syncCollectionFromCloud('attendance_settings', true).catch(() => {}),
+        localDb.syncCollectionFromCloud('academic_holidays', true).catch(() => {})
+      ]);
+      const [freshAtts, freshAttSettings, freshHolidays] = await Promise.all([
+        localDb.getDocs<AttendanceSessionLog>('attendance'),
+        localDb.getDocs<AttendanceSettings>('attendance_settings'),
+        localDb.getDocs<AcademicHolidayItem>('academic_holidays')
+      ]);
+      setAttendanceLogs(freshAtts || []);
+      setAttendanceSettings(freshAttSettings && freshAttSettings.length > 0 ? freshAttSettings[0] : null);
+      setAcademicHolidays(freshHolidays || []);
+      if (showFeedback) {
+        showToast(`آمار حضور و غیاب از سرور بروزرسانی شد (${(freshAtts || []).length} جلسه).`);
+      }
+    } catch (err) {
+      console.warn('Error refreshing attendance data:', err);
+    } finally {
+      if (showFeedback) setIsRefreshingAttendance(false);
+    }
+  }, []);
+
+  const normalizeCounselingGradeDate = useCallback((raw?: string): string => {
+    if (!raw) return '';
+    const trimmed = String(raw).trim();
+    if (!trimmed) return '';
+    // Handle ISO Gregorian timestamps (e.g., 2026-04-12T...) if present in legacy rows
+    if (/^\d{4}-\d{2}-\d{2}T/.test(trimmed)) {
+      const parsed = new Date(trimmed);
+      if (!isNaN(parsed.getTime())) {
+        return normalizeShamsiDateStr(dateToShamsi(parsed));
+      }
+    }
+    return normalizeShamsiDateStr(trimmed);
+  }, []);
+
+  const mergeCounselingSources = useCallback((primary: CounselingSessionGrade[] = [], legacy: CounselingSessionGrade[] = []): CounselingSessionGrade[] => {
+    const byId = new Map<string, CounselingSessionGrade>();
+    [...legacy, ...primary].forEach(item => {
+      if (!item || !item.id) return;
+      const existing = byId.get(item.id);
+      if (!existing) {
+        byId.set(item.id, item);
+      } else {
+        const curTs = new Date(item.updatedAt || item.createdAt || 0).getTime();
+        const prevTs = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
+        if (curTs >= prevTs) {
+          byId.set(item.id, item);
+        }
+      }
+    });
+    return Array.from(byId.values());
+  }, []);
+
+  const refreshCounselingGradesFromCloud = useCallback(async (showFeedback = false) => {
+    if (showFeedback) setIsRefreshingCounseling(true);
+    try {
+      await localDb.syncCollectionFromCloud('counseling_session_grades', true).catch(() => {});
+      const [freshPrimary, freshLegacy] = await Promise.all([
+        localDb.getDocs<CounselingSessionGrade>('counseling_session_grades'),
+        localDb.getDocs<CounselingSessionGrade>('counseling_grades' as any).catch(() => [] as CounselingSessionGrade[])
+      ]);
+      const merged = mergeCounselingSources(freshPrimary || [], freshLegacy || []);
+      setCounselingGrades(merged);
+      if (showFeedback) {
+        showToast(`اطلاعات ارزیابی کلاس‌های مشاوره بروزرسانی شد (${merged.length} رکورد).`);
+      }
+    } catch (err) {
+      console.warn('Error refreshing counseling grades:', err);
+    } finally {
+      if (showFeedback) setIsRefreshingCounseling(false);
+    }
+  }, [mergeCounselingSources]);
+
   useEffect(() => {
     loadAllData(true);
+    // Explicitly hydrate counseling evaluations and attendance from authoritative server cache (non-blocking)
+    refreshCounselingGradesFromCloud(false);
+    refreshAttendanceFromCloud(false);
+
     let debounceTimer: any = null;
     const unsub = localDb.subscribe(() => {
       // Debounce background refreshes so UI never flickers or re-mounts
@@ -431,11 +534,48 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
         loadAllData(false);
       }, 300);
     });
+
+    const handleCounselingEvent = (e: any) => {
+      if (!e?.detail || e.detail.collection === 'counseling_session_grades' || e.detail.collection === 'counseling_grades' || e.detail.collection === 'all') {
+        refreshCounselingGradesFromCloud(false);
+      }
+      if (!e?.detail || e.detail.collection === 'attendance' || e.detail.collection === 'attendance_settings' || e.detail.collection === 'all') {
+        refreshAttendanceFromCloud(false);
+      }
+    };
+    const handleDirectCounselingEvent = () => {
+      refreshCounselingGradesFromCloud(false);
+    };
+    const handleDirectAttendanceEvent = () => {
+      refreshAttendanceFromCloud(false);
+    };
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'counseling_session_grades_updated_at' || (e.key && e.key.includes('counseling_session_grades'))) {
+        refreshCounselingGradesFromCloud(false);
+      }
+      if (e.key && (e.key.includes('attendance') || e.key.includes('attendance_settings'))) {
+        refreshAttendanceFromCloud(false);
+      }
+    };
+
+    window.addEventListener('app_data_change', handleCounselingEvent);
+    window.addEventListener('collection_change_counseling_session_grades', handleDirectCounselingEvent);
+    window.addEventListener('attendance_updated', handleDirectAttendanceEvent);
+    window.addEventListener('collection_change_attendance', handleDirectAttendanceEvent);
+    window.addEventListener('collection_change_attendance_settings', handleDirectAttendanceEvent);
+    window.addEventListener('storage', handleStorageChange);
+
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer);
       unsub();
+      window.removeEventListener('app_data_change', handleCounselingEvent);
+      window.removeEventListener('collection_change_counseling_session_grades', handleDirectCounselingEvent);
+      window.removeEventListener('attendance_updated', handleDirectAttendanceEvent);
+      window.removeEventListener('collection_change_attendance', handleDirectAttendanceEvent);
+      window.removeEventListener('collection_change_attendance_settings', handleDirectAttendanceEvent);
+      window.removeEventListener('storage', handleStorageChange);
     };
-  }, []);
+  }, [refreshCounselingGradesFromCloud, refreshAttendanceFromCloud]);
 
   // Save Settings Handler
   const handleSaveSettings = async (e: React.FormEvent) => {
@@ -598,61 +738,100 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
   // Data Aggregation in Selected Window [startDate, endDate]
   // -------------------------------------------------------------
 
-  // 1. Attendance Aggregation
+  // 1. Attendance Aggregation (Deduplicated, Holiday-aware, Multi-key Matched, & Aligned with Education Attendance Rules)
   const attendanceAggregations = useMemo(() => {
+    const rules = resolveAttendanceRules(attendanceSettings);
+    const matchStudentId = buildStudentCanonicalMatcher(students);
+    const consolidatedLogs = consolidateAttendanceLogs(attendanceLogs);
+
     const map: Record<string, {
       present: number;
       absentUnexcused: number;
+      directAbsentUnexcused: number;
+      lateConvertedAbsences: number;
       absentExcused: number;
       late: number;
+      lateMinutesTotal: number;
       unspecified: number;
       warningCount: number;
       totalSessions: number;
     }> = {};
 
     students.forEach(s => {
-      map[s.id] = { present: 0, absentUnexcused: 0, absentExcused: 0, late: 0, unspecified: 0, warningCount: 0, totalSessions: 0 };
+      map[s.id] = {
+        present: 0,
+        absentUnexcused: 0,
+        directAbsentUnexcused: 0,
+        lateConvertedAbsences: 0,
+        absentExcused: 0,
+        late: 0,
+        lateMinutesTotal: 0,
+        unspecified: 0,
+        warningCount: 0,
+        totalSessions: 0
+      };
     });
 
     const normStart = normalizeShamsiDateStr(startDate);
     const normEnd = normalizeShamsiDateStr(endDate);
 
-    attendanceLogs.forEach(log => {
+    consolidatedLogs.forEach(log => {
       if (log.isCancelled) return;
       const logDateNorm = normalizeShamsiDateStr(log.date);
+      if (!logDateNorm) return;
       const inRange = (!normStart || logDateNorm >= normStart) && (!normEnd || logDateNorm <= normEnd);
-      if (inRange) {
-        if (Array.isArray(log.students)) {
-          log.students.forEach(st => {
-            if (!map[st.studentId]) {
-              map[st.studentId] = { present: 0, absentUnexcused: 0, absentExcused: 0, late: 0, unspecified: 0, warningCount: 0, totalSessions: 0 };
-            }
-            map[st.studentId].totalSessions++;
-            if (st.status === 'present') {
-              map[st.studentId].present++;
-            } else if (st.status === 'absent') {
-              if (st.isExcused) {
-                map[st.studentId].absentExcused++;
-              } else {
-                map[st.studentId].absentUnexcused++;
-              }
-            } else if (st.status === 'excused') {
-              map[st.studentId].absentExcused++;
-            } else if (st.status === 'late') {
-              map[st.studentId].late++;
-            } else {
-              map[st.studentId].unspecified++;
-            }
-            if (st.hasEducationalWarning) {
-              map[st.studentId].warningCount++;
-            }
-          });
-        }
+      if (!inRange) return;
+      if (isDateOfficialHoliday(logDateNorm, log.grade, academicHolidays)) return;
+
+      if (Array.isArray(log.students)) {
+        log.students.forEach(st => {
+          const canonicalId = matchStudentId(st) || String(st.studentId || '').trim();
+          if (!canonicalId) return;
+          if (!map[canonicalId]) {
+            map[canonicalId] = {
+              present: 0,
+              absentUnexcused: 0,
+              directAbsentUnexcused: 0,
+              lateConvertedAbsences: 0,
+              absentExcused: 0,
+              late: 0,
+              lateMinutesTotal: 0,
+              unspecified: 0,
+              warningCount: 0,
+              totalSessions: 0
+            };
+          }
+
+          const classified = classifyAttendanceRecord(st, rules);
+          map[canonicalId].totalSessions++;
+          if (classified.effectiveStatus === 'present') {
+            map[canonicalId].present++;
+          } else if (classified.effectiveStatus === 'absent') {
+            map[canonicalId].directAbsentUnexcused++;
+          } else if (classified.effectiveStatus === 'excused') {
+            map[canonicalId].absentExcused++;
+          } else if (classified.effectiveStatus === 'late') {
+            map[canonicalId].late++;
+            map[canonicalId].lateMinutesTotal += classified.countedLateMinutes;
+          } else {
+            map[canonicalId].unspecified++;
+          }
+
+          if (st.hasEducationalWarning) {
+            map[canonicalId].warningCount++;
+          }
+        });
       }
     });
 
+    // Apply late-to-absence conversion ratio across the selected period range
+    Object.values(map).forEach(entry => {
+      entry.lateConvertedAbsences = computeLateConvertedAbsences(entry.late, rules);
+      entry.absentUnexcused = entry.directAbsentUnexcused + entry.lateConvertedAbsences;
+    });
+
     return map;
-  }, [students, attendanceLogs, startDate, endDate]);
+  }, [students, attendanceLogs, attendanceSettings, academicHolidays, startDate, endDate]);
 
   // 2. Study Hours Aggregation (Scoped strictly to selected date range and actual records)
   const studyAggregations = useMemo(() => {
@@ -735,42 +914,91 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
   const counselingAggregations = useMemo(() => {
     const map: Record<string, { countA: number; countB: number; countC: number; countD: number; countAbsence: number; total: number }> = {};
 
+    const normalizePersian = (val?: string) =>
+      String(val || '').replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/\s+/g, ' ').trim();
+
+    const byId = new Map<string, string>();
+    const byCode = new Map<string, string>();
+    const byNational = new Map<string, string>();
+    const byName = new Map<string, string>();
+
     students.forEach(s => {
       map[s.id] = { countA: 0, countB: 0, countC: 0, countD: 0, countAbsence: 0, total: 0 };
+      byId.set(String(s.id).trim(), s.id);
+      if (s.studentCode) byCode.set(String(s.studentCode).trim().toLowerCase(), s.id);
+      if (s.nationalId) byNational.set(String(s.nationalId).trim(), s.id);
+      if (s.name) byName.set(normalizePersian(s.name), s.id);
     });
+
+    const resolveStudentId = (cg: CounselingSessionGrade): string => {
+      const rawId = String(cg.studentId || (cg as any).student_id || '').trim();
+      if (rawId && byId.has(rawId)) return byId.get(rawId)!;
+      if (rawId && byCode.has(rawId.toLowerCase())) return byCode.get(rawId.toLowerCase())!;
+      if (rawId && byNational.has(rawId)) return byNational.get(rawId)!;
+      const rawCode = String((cg as any).studentCode || '').trim().toLowerCase();
+      if (rawCode && byCode.has(rawCode)) return byCode.get(rawCode)!;
+      const rawNat = String((cg as any).nationalId || '').trim();
+      if (rawNat && byNational.has(rawNat)) return byNational.get(rawNat)!;
+      const normName = normalizePersian(cg.studentName);
+      if (normName && byName.has(normName)) return byName.get(normName)!;
+      return rawId || normName;
+    };
 
     const normStart = normalizeShamsiDateStr(startDate);
     const normEnd = normalizeShamsiDateStr(endDate);
 
+    // Deduplicate per (student, course, sessionDate) keeping latest version/timestamp
+    const dedupMap = new Map<string, { resolvedId: string; grade: CounselingSessionGrade }>();
     counselingGrades.forEach(cg => {
-      const gDateNorm = normalizeShamsiDateStr(cg.sessionDate);
+      const rawDate = cg.sessionDate || (cg as any).date || (cg as any).session_date;
+      const gDateNorm = normalizeCounselingGradeDate(rawDate);
+      if (!gDateNorm) return;
       const inRange = (!normStart || gDateNorm >= normStart) && (!normEnd || gDateNorm <= normEnd);
-      if (inRange) {
-        if (!map[cg.studentId]) {
-          map[cg.studentId] = { countA: 0, countB: 0, countC: 0, countD: 0, countAbsence: 0, total: 0 };
+      if (!inRange) return;
+
+      const resolvedId = resolveStudentId(cg);
+      if (!resolvedId) return;
+
+      const dedupKey = `${resolvedId}::${normalizePersian(cg.courseTitle || '')}::${gDateNorm}`;
+      const existing = dedupMap.get(dedupKey);
+      if (!existing) {
+        dedupMap.set(dedupKey, { resolvedId, grade: cg });
+      } else {
+        const curVer = Number((cg as any).version || 0);
+        const oldVer = Number((existing.grade as any).version || 0);
+        const curTime = new Date(cg.updatedAt || cg.createdAt || 0).getTime();
+        const oldTime = new Date(existing.grade.updatedAt || existing.grade.createdAt || 0).getTime();
+        if (curVer > oldVer || (curVer === oldVer && curTime >= oldTime)) {
+          dedupMap.set(dedupKey, { resolvedId, grade: cg });
         }
-        map[cg.studentId].total += 2; // participation + research
-
-        // Factor 1: Participation score (or legacy score)
-        const pScore = cg.participationScore || (cg as any).score;
-        if (pScore === 'الف') map[cg.studentId].countA++;
-        else if (pScore === 'ب') map[cg.studentId].countB++;
-        else if (pScore === 'ج') map[cg.studentId].countC++;
-        else if (pScore === 'د') map[cg.studentId].countD++;
-        else if (pScore === 'غیبت') map[cg.studentId].countAbsence++;
-
-        // Factor 2: Research score
-        const rScore = cg.researchScore;
-        if (rScore === 'الف') map[cg.studentId].countA++;
-        else if (rScore === 'ب') map[cg.studentId].countB++;
-        else if (rScore === 'ج') map[cg.studentId].countC++;
-        else if (rScore === 'د') map[cg.studentId].countD++;
-        else if (rScore === 'غیبت') map[cg.studentId].countAbsence++;
       }
     });
 
+    dedupMap.forEach(({ resolvedId, grade: cg }) => {
+      if (!map[resolvedId]) {
+        map[resolvedId] = { countA: 0, countB: 0, countC: 0, countD: 0, countAbsence: 0, total: 0 };
+      }
+      map[resolvedId].total += 2; // participation + research
+
+      // Factor 1: Participation score (or legacy score)
+      const pScore = normalizePersian(String(cg.participationScore || (cg as any).score || ''));
+      if (pScore === 'الف') map[resolvedId].countA++;
+      else if (pScore === 'ب') map[resolvedId].countB++;
+      else if (pScore === 'ج') map[resolvedId].countC++;
+      else if (pScore === 'د') map[resolvedId].countD++;
+      else if (pScore === 'غیبت') map[resolvedId].countAbsence++;
+
+      // Factor 2: Research score
+      const rScore = normalizePersian(String(cg.researchScore || ''));
+      if (rScore === 'الف') map[resolvedId].countA++;
+      else if (rScore === 'ب') map[resolvedId].countB++;
+      else if (rScore === 'ج') map[resolvedId].countC++;
+      else if (rScore === 'د') map[resolvedId].countD++;
+      else if (rScore === 'غیبت' || rScore === 'عدم انجام تکلیف') map[resolvedId].countAbsence++;
+    });
+
     return map;
-  }, [students, counselingGrades, startDate, endDate]);
+  }, [students, counselingGrades, startDate, endDate, normalizeCounselingGradeDate]);
 
   // 4. Loans & Fund Aggregation
   const financialInstallmentsMap = useMemo(() => {
@@ -1258,6 +1486,8 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
     setIsNewPeriodModalOpen(false);
     setPageMode('active_period');
     setCurrentSubTab('activity_info');
+    refreshCounselingGradesFromCloud(false);
+    refreshAttendanceFromCloud(false);
     showToast(`دوره شهریه «${newPeriodTitle}» با موفقیت تنظیم شد. اکنون می‌توانید اطلاعات طلاب را بررسی فرمایید.`);
   };
 
@@ -2008,6 +2238,8 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
           studyLogs={studyLogs}
           studyDailyEntries={studyDailyEntries}
           attendanceLogs={attendanceLogs}
+          attendanceSettings={attendanceSettings}
+          academicHolidays={academicHolidays}
           counselingGrades={counselingGrades}
           mealReservations={mealReservations}
           mealPeriods={mealPeriods}
@@ -2031,6 +2263,10 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
           onOpenDebtModal={(st) => {
             setSelectedStudentForDebtDetail(st);
           }}
+          onRefreshCounselingGrades={() => refreshCounselingGradesFromCloud(true)}
+          isRefreshingCounseling={isRefreshingCounseling}
+          onRefreshAttendance={() => refreshAttendanceFromCloud(true)}
+          isRefreshingAttendance={isRefreshingAttendance}
         />
       )}
 
