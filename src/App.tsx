@@ -41,6 +41,7 @@ const AnnouncementsManagement = lazy(() => import('./components/education/Announ
 const MaintenanceModeManagement = lazy(() => import('./components/admin/MaintenanceModeManagement'));
 const StudentAccessManagement = lazy(() => import('./components/education/StudentAccessManagement'));
 const StudentWarningsManagement = lazy(() => import('./components/student/StudentWarningsManagement'));
+const StudentPerformanceReport = lazy(() => import('./components/student/StudentPerformanceReport'));
 const TodoList = lazy(() => import('./components/TodoList'));
 const StudentComments = lazy(() => import('./components/StudentComments'));
 const StudyDiscussion = lazy(() => import('./components/StudyDiscussion'));
@@ -129,6 +130,7 @@ const TAB_PARENT_CATEGORY_MAP: Record<string, string> = {
   'todos': 'requests_group',
 
   'students': 'students_group',
+  'my-performance': 'students_group',
   'active-students': 'students_group',
   'student-schedule': 'students_group',
   'attendance': 'students_group',
@@ -343,6 +345,7 @@ function AppContent() {
   const getActiveTabTitle = (tab: string) => {
     switch (tab) {
       case 'dashboard': return 'داشبورد اصلی و مدیریت سریع';
+      case 'my-performance': return 'گزارش عملکرد من';
       case 'student-requests': return currentUser?.level === 3 ? 'پنل ثبت درخواست طلاب' : 'پنل رسیدگی به درخواست طلاب';
       case 'todos': return 'پیگیری‌ها و تسک‌های جاری';
       case 'workflow': return 'جریان کار و کارتابل تاییدات';
@@ -560,6 +563,8 @@ function AppContent() {
         return <TeacherTransportManagement />;
       case 'student-requests':
         return <StudentRequestsPortal />;
+      case 'my-performance':
+        return <StudentPerformanceReport />;
       case 'student-portal':
         if (isStudentMobile) {
           return <StudentMobileSummary onNavigateTab={handleNavigate} />;

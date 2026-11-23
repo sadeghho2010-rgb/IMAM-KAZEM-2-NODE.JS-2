@@ -163,7 +163,7 @@ const USERS_STORAGE_KEY = 'hawzah_app_system_users_v3';
 const CURRENT_USER_KEY = 'hawzah_app_current_user_v3';
 
 export const STUDENT_DEFAULT_ALLOWED_TABS: string[] = [
-  'dashboard', 'student-requests', 'student-portal', 'summary', 'student-meals', 'student-payments',
+  'dashboard', 'my-performance', 'student-requests', 'student-portal', 'summary', 'student-meals', 'student-payments',
   'student-schedule', 'academic-calendar', 'discussion', 'research', 'attendance', 'stats',
   'course-selection', 'programs', 'classrooms', 'passed-courses', 'rep-attendance', 'self-reporting',
   'todos', 'security-pin-settings'

@@ -101,6 +101,7 @@ export const MENU_CATEGORIES: MenuCategoryDef[] = [
     id: 'students_group',
     title: 'امور طلاب و پایش',
     itemIds: [
+      'my-performance',
       'students',
       'active-students',
       'student-schedule',
@@ -170,6 +171,7 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'student-meals', label: 'رزرو نهار و شام', icon: UtensilsCrossed },
   { id: 'student-payments', label: 'پرداختی‌ها و مالی', icon: Wallet },
   { id: 'student-portal', label: 'پرتال و ثبت فعالیت من', icon: User },
+  { id: 'my-performance', label: 'گزارش عملکرد من', icon: BarChart2 },
   { id: 'teacher-portal', label: 'پنل اساتید و ارزیابی', icon: GraduationCap },
   { id: 'todos', label: 'پیگیری‌ها', icon: GraduationCap },
   { id: 'workflow', label: 'جریان کار', icon: GitBranch },
@@ -457,6 +459,16 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onToggle, onO
 
     // Rule 7: Hide classrooms (مدرس‌ها) and comments (نظرات تربیتی) from students by default
     if ((currentUser.level === 3 || currentUser.role === 'student') && (item.id === 'classrooms' || item.id === 'comments')) {
+      return false;
+    }
+
+    // Rule 8: Personal Student Performance Report is strictly visible ONLY for students
+    if (
+      item.id === 'my-performance' &&
+      currentUser.level !== 3 &&
+      currentUser.role !== 'student' &&
+      currentUser.role !== 'class_representative'
+    ) {
       return false;
     }
 

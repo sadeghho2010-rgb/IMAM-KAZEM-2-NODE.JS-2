@@ -397,6 +397,13 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
       iconBg: string;
     }> = [
       {
+        tab: 'my-performance',
+        title: 'گزارش عملکرد من',
+        subtitle: 'غیبت، مشاوره، اخطارها، مطالعه، تغذیه و آزمون',
+        icon: GlyphReportCard,
+        iconBg: 'bg-gradient-to-br from-indigo-50 to-violet-50 text-indigo-700 border-indigo-200/90',
+      },
+      {
         tab: 'student-portal',
         title: 'کارنامه علمی',
         subtitle: 'نمرات و پرونده تحصیلی',
@@ -615,6 +622,28 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
               </div>
             </div>
             <ChevronLeft size={16} className="shrink-0 opacity-85" />
+          </motion.button>
+        )}
+        {/* Featured Read-Only Personal Performance Report Banner */}
+        {isTabAllowed('my-performance') && (
+          <motion.button
+            type="button"
+            whileTap={prefersReducedMotion ? undefined : { scale: 0.98 }}
+            onClick={() => onNavigateTab('my-performance')}
+            className="relative z-10 mt-2.5 w-full min-h-[48px] px-3.5 py-2.5 rounded-2xl flex items-center justify-between gap-2 text-right transition-all cursor-pointer border bg-gradient-to-l from-indigo-500/30 via-violet-500/25 to-fuchsia-500/20 hover:from-indigo-500/40 hover:to-fuchsia-500/30 border-indigo-300/40 text-white shadow-sm"
+          >
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-black truncate">گزارش عملکرد من</span>
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-white/15 text-indigo-100 border border-white/20 shrink-0">
+                  فقط مشاهده
+                </span>
+              </div>
+              <div className="text-[10px] text-indigo-100/85 truncate mt-0.5">
+                غیبت و تأخیر، مشاوره، اخطارهای قطعی، مطالعه، ناهار و شام، آزمون شفاهی
+              </div>
+            </div>
+            <ChevronLeft size={16} className="shrink-0 text-indigo-100" />
           </motion.button>
         )}
       </motion.section>

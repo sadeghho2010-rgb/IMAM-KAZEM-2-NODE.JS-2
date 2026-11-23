@@ -60,6 +60,15 @@ interface DrawerServiceItem {
 
 const ALL_DRAWER_SERVICES: DrawerServiceItem[] = [
   {
+    id: 'srv-my-performance',
+    tabId: 'my-performance',
+    title: 'گزارش عملکرد من',
+    subtitle: 'غیبت، تأخیر، مشاوره، اخطارها، مطالعه، تغذیه و آزمون شفاهی',
+    icon: GlyphReportCard,
+    accentClass: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    category: 'personal',
+  },
+  {
     id: 'srv-study',
     tabId: 'stats',
     title: 'ساعت مطالعه من',

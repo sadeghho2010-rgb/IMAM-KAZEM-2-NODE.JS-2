@@ -60,6 +60,16 @@ export interface StudentSectionDefinition {
 
 export const ALL_STUDENT_PORTAL_SECTIONS: StudentSectionDefinition[] = [
   {
+    id: 'my_performance_report',
+    title: 'گزارش عملکرد من (فقط مشاهده)',
+    subtitle: 'مشاهده خلاصه و جزئیات غیبت و تأخیر، ارزیابی کلاس‌های مشاوره، اخطارهای قطعی، مطالعه، ناهار و شام و آزمون شفاهی',
+    category: 'آموزشی و انضباطی',
+    icon: Sparkles,
+    color: 'from-indigo-600 to-violet-600',
+    relatedTabIds: ['my-performance'],
+    mobileTabIds: ['my-performance']
+  },
+  {
     id: 'lunch_reservation',
     title: 'رزرو ناهار و تغذیه',
     subtitle: 'مشاهده برنامه غذایی هفتگی و ثبت یا لغو رزرو ناهار طلاب',

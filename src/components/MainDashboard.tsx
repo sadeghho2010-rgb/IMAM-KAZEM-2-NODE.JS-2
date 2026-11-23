@@ -754,6 +754,19 @@ export default function MainDashboard({
       accentText: 'text-teal-600'
     },
     {
+      id: 'my-performance',
+      title: 'گزارش عملکرد من',
+      subtitle: 'غیبت و تأخیر، ارزیابی کلاس‌های مشاوره، اخطارهای قطعی، مطالعه، ناهار و شام و آزمون شفاهی (فقط مشاهده)',
+      category: 'students',
+      icon: BarChart2,
+      iconBg: 'bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600 text-white shadow-lg shadow-indigo-500/35',
+      cardGradient: 'from-indigo-500/15 via-violet-500/5 to-transparent',
+      borderGlow: 'hover:border-indigo-400 hover:shadow-2xl hover:shadow-indigo-500/25',
+      accentText: 'text-indigo-700',
+      badgeText: 'فقط مشاهده',
+      highlight: true
+    },
+    {
       id: 'student-portal',
       title: 'پرتال اختصاصی پرونده و کارنامه',
       subtitle: 'مشاهده مشخصات فردی، پرونده علمی، سوابق تحصیلی و نمرات',
@@ -1218,7 +1231,7 @@ export default function MainDashboard({
       cardGradient: 'from-sky-500/15 via-blue-500/5 to-transparent',
       borderGlow: 'hover:border-sky-400 hover:shadow-2xl hover:shadow-sky-500/25',
       accentText: 'text-sky-600',
-      itemIds: ['students', 'active-students', 'student-schedule', 'student-portal', 'attendance', 'warnings-management', 'student-access-management', 'discussion', 'stats', 'comments', 'summary', 'passed-courses']
+      itemIds: ['my-performance', 'students', 'active-students', 'student-schedule', 'student-portal', 'attendance', 'warnings-management', 'student-access-management', 'discussion', 'stats', 'comments', 'summary', 'passed-courses']
     },
     {
       id: 'research_group',
@@ -1281,6 +1294,13 @@ export default function MainDashboard({
       if (isGradeMentor && card.id === 'student-requests') return;
       // Rule: Hide classrooms (مدرس‌ها) and comments (نظرات تربیتی) from students by default
       if ((currentUser.level === 3 || currentUser.role === 'student') && (card.id === 'classrooms' || card.id === 'comments')) return;
+      // Rule: Personal Student Performance Report is strictly visible ONLY for students
+      if (
+        card.id === 'my-performance' &&
+        currentUser.level !== 3 &&
+        currentUser.role !== 'student' &&
+        currentUser.role !== 'class_representative'
+      ) return;
       map.set(card.id, card);
     });
     return map;
@@ -1389,10 +1409,13 @@ export default function MainDashboard({
   useEffect(() => {
     if (hasCustomQuickAccess) return;
     if (currentUser && !isStaffPriorityDefault) {
+      const isStudentUser = currentUser.level === 3 || currentUser.role === 'student' || currentUser.role === 'class_representative';
       setQuickAccessCardIds(
         isFinanceManager
           ? ['finance-tuition', 'finance-teachers', 'finance-lunch', 'finance-loans-fund', 'finance-expenses-reports']
-          : ['attendance', 'student-requests', 'student-schedule', 'stats', 'finance-tuition']
+          : isStudentUser
+            ? ['my-performance', 'attendance', 'student-requests', 'student-schedule', 'stats']
+            : ['attendance', 'student-requests', 'student-schedule', 'stats', 'finance-tuition']
       );
     } else if (currentUser && isStaffPriorityDefault) {
       setQuickAccessCardIds([...STAFF_DEFAULT_PRIORITY_ORDER]);
