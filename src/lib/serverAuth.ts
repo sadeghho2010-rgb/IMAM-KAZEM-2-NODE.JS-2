@@ -146,6 +146,16 @@ export function validateRole(role: string, level: number): { valid: boolean; mes
 const userLastActivity = new Map<string, number>();
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 mins
 
+// Strict absolute session duration for Level 1 and Level 2 users (30 minutes from login)
+export const LEVEL_1_2_SESSION_DURATION_MS = 30 * 60 * 1000;
+export const LEVEL_1_2_SESSION_DURATION_SECONDS = 30 * 60;
+
+export function isLevel1Or2User(user?: { level?: number | string } | null): boolean {
+  if (!user) return false;
+  const lvl = Number(user.level);
+  return lvl === 1 || lvl === 2;
+}
+
 export function updateLastActivity(userId: string) {
   if (userId) {
     userLastActivity.set(userId, Date.now());
@@ -381,9 +391,21 @@ export function validatePasswordStrength(password: string): { valid: boolean; me
   return { valid: true };
 }
 
-export function generateTokens(user: SafeUser): { token: string; refreshToken: string } {
-  const now = Math.floor(Date.now() / 1000);
+export function generateTokens(
+  user: SafeUser,
+  options?: { fixedExpiresAtMs?: number }
+): { token: string; refreshToken: string; sessionExpiresAt: number | null } {
+  const nowMs = Date.now();
+  const now = Math.floor(nowMs / 1000);
   const uAny = user as any;
+  const isRestrictedLevel = isLevel1Or2User(user);
+
+  const sessionExpiresAt = isRestrictedLevel
+    ? (options?.fixedExpiresAtMs && options.fixedExpiresAtMs > nowMs
+        ? options.fixedExpiresAtMs
+        : nowMs + LEVEL_1_2_SESSION_DURATION_MS)
+    : null;
+
   const payload = {
     userId: user.id,
     id: user.id,
@@ -400,13 +422,25 @@ export function generateTokens(user: SafeUser): { token: string; refreshToken: s
     linkedStudentId: user.linkedStudentId || user.studentId,
     managedClassId: uAny.managedClassId,
     representativeProgramIds: uAny.representativeProgramIds,
+    ...(sessionExpiresAt ? { sessionExpiresAt } : {}),
     iat: now
   };
 
-  const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '24h' });
-  const refreshToken = jwt.sign({ userId: user.id, username: user.username, iat: now }, JWT_REFRESH_SECRET, { expiresIn: '7d' });
+  if (isRestrictedLevel && sessionExpiresAt) {
+    const remainingSeconds = Math.max(1, Math.floor((sessionExpiresAt - nowMs) / 1000));
+    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: remainingSeconds });
+    const refreshToken = jwt.sign(
+      { userId: user.id, username: user.username, level: user.level, sessionExpiresAt, iat: now },
+      JWT_REFRESH_SECRET,
+      { expiresIn: remainingSeconds }
+    );
+    return { token, refreshToken, sessionExpiresAt };
+  }
 
-  return { token, refreshToken };
+  const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '24h' });
+  const refreshToken = jwt.sign({ userId: user.id, username: user.username, level: user.level, iat: now }, JWT_REFRESH_SECRET, { expiresIn: '7d' });
+
+  return { token, refreshToken, sessionExpiresAt: null };
 }
 
 export interface JwtPayloadDecoded {
@@ -414,6 +448,7 @@ export interface JwtPayloadDecoded {
   username: string;
   role?: string;
   level?: number;
+  sessionExpiresAt?: number;
   iat?: number;
   exp?: number;
   [key: string]: unknown;
@@ -425,6 +460,23 @@ export function verifyAccessToken(token: string): { valid: boolean; decoded?: Jw
       return { valid: false, error: 'این نشست باطل شده است.' };
     }
     const decoded = jwt.verify(token, JWT_SECRET) as JwtPayloadDecoded;
+
+    // Enforce strict 30-minute absolute session cap for all Level 1 and Level 2 users
+    if (isLevel1Or2User(decoded)) {
+      const nowMs = Date.now();
+      const absoluteExpiresAt =
+        typeof decoded.sessionExpiresAt === 'number'
+          ? decoded.sessionExpiresAt
+          : typeof decoded.iat === 'number'
+            ? decoded.iat * 1000 + LEVEL_1_2_SESSION_DURATION_MS
+            : 0;
+      if (absoluteExpiresAt > 0 && nowMs >= absoluteExpiresAt) {
+        return {
+          valid: false,
+          error: 'مهلت ۳۰ دقیقه‌ای نشست کاربری (سطح ۱ و ۲) به پایان رسیده است. لطفاً مجدداً وارد شوید.'
+        };
+      }
+    }
 
     // Check idle timeout (30 mins without activity)
     if (!checkIdleTimeout(decoded.userId)) {
@@ -450,6 +502,23 @@ export function verifyRefreshToken(refreshToken: string): { valid: boolean; deco
       return { valid: false, error: 'این ریفرش‌توکن باطل شده است.' };
     }
     const decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET) as JwtPayloadDecoded;
+
+    // Enforce strict 30-minute absolute session cap for Level 1 and Level 2 refresh tokens
+    if (isLevel1Or2User(decoded)) {
+      const nowMs = Date.now();
+      const absoluteExpiresAt =
+        typeof decoded.sessionExpiresAt === 'number'
+          ? decoded.sessionExpiresAt
+          : typeof decoded.iat === 'number'
+            ? decoded.iat * 1000 + LEVEL_1_2_SESSION_DURATION_MS
+            : 0;
+      if (absoluteExpiresAt > 0 && nowMs >= absoluteExpiresAt) {
+        return {
+          valid: false,
+          error: 'مهلت ۳۰ دقیقه‌ای نشست کاربری (سطح ۱ و ۲) به پایان رسیده است. لطفاً مجدداً وارد شوید.'
+        };
+      }
+    }
     
     const revokedAt = userRevocationTimestamp.get(decoded.userId);
     if (revokedAt && decoded.iat && (decoded.iat * 1000 < revokedAt)) {

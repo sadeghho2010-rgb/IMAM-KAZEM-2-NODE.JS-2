@@ -161,6 +161,58 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const USERS_STORAGE_KEY = 'hawzah_app_system_users_v3';
 const CURRENT_USER_KEY = 'hawzah_app_current_user_v3';
+const SESSION_EXPIRES_AT_KEY = 'hawzah_app_session_expires_at_v1';
+export const SESSION_EXPIRED_NOTICE_KEY = 'hawzah_app_session_expired_notice_v1';
+const LEVEL_1_2_SESSION_DURATION_MS = 30 * 60 * 1000; // 30 minutes
+const LEVEL_1_2_SESSION_EXPIRED_MSG =
+  'مهلت ۳۰ دقیقه‌ای نشست کاربری شما (کاربران سطح ۱ و ۲) به پایان رسید. جهت ادامه استفاده لطفاً مجدداً وارد سامانه شوید.';
+
+function isRestrictedLevelUser(user?: { level?: number | string } | null): boolean {
+  if (!user) return false;
+  const lvl = Number(user.level);
+  return lvl === 1 || lvl === 2;
+}
+
+function decodeJwtPayloadSafe(token?: string | null): { iat?: number; exp?: number; sessionExpiresAt?: number; level?: number } | null {
+  if (!token || typeof token !== 'string') return null;
+  try {
+    const parts = token.split('.');
+    if (parts.length < 2) return null;
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+    const jsonStr = atob(padded);
+    const parsed = JSON.parse(jsonStr);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveRestrictedSessionExpiresAt(): number | null {
+  try {
+    const storedRaw = localStorage.getItem(SESSION_EXPIRES_AT_KEY);
+    if (storedRaw) {
+      const parsedNum = Number(storedRaw);
+      if (Number.isFinite(parsedNum) && parsedNum > 0) {
+        return parsedNum;
+      }
+    }
+    const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+    const payload = decodeJwtPayloadSafe(token);
+    if (payload) {
+      if (typeof payload.sessionExpiresAt === 'number' && payload.sessionExpiresAt > 0) {
+        return payload.sessionExpiresAt;
+      }
+      if (typeof payload.iat === 'number' && payload.iat > 0) {
+        return payload.iat * 1000 + LEVEL_1_2_SESSION_DURATION_MS;
+      }
+      if (typeof payload.exp === 'number' && payload.exp > 0) {
+        return payload.exp * 1000;
+      }
+    }
+  } catch {}
+  return null;
+}
 
 export const STUDENT_DEFAULT_ALLOWED_TABS: string[] = [
   'dashboard', 'my-performance', 'student-requests', 'student-portal', 'summary', 'student-meals', 'student-payments',
@@ -406,6 +458,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && typeof parsed === 'object' && parsed.username) {
+          // Immediately enforce 30-minute session cap for Level 1 & Level 2 users before rendering app
+          if (isRestrictedLevelUser(parsed)) {
+            const existingExpiresAt = resolveRestrictedSessionExpiresAt();
+            if (existingExpiresAt && Date.now() >= existingExpiresAt) {
+              try {
+                localStorage.removeItem(CURRENT_USER_KEY);
+                localStorage.removeItem(SESSION_EXPIRES_AT_KEY);
+                localStorage.removeItem('auth_token');
+                sessionStorage.removeItem('auth_token');
+                localStorage.removeItem('access_token');
+                sessionStorage.removeItem('access_token');
+                sessionStorage.setItem(SESSION_EXPIRED_NOTICE_KEY, LEVEL_1_2_SESSION_EXPIRED_MSG);
+              } catch {}
+              return null;
+            }
+          }
           const uname = parsed.username.toUpperCase();
           const found = DEFAULT_USERS.find(u => u.username.toUpperCase() === uname);
           const isEduOrAdmin = parsed.role === 'education_manager' || parsed.role === 'education_officer' || uname === 'SHAH' || parsed.role === 'super_admin' || parsed.level === 1;
@@ -480,9 +548,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return null;
   });
 
+  const [sessionExpiresAt, setSessionExpiresAt] = useState<number | null>(() => {
+    if (!isRestrictedLevelUser(currentUser)) return null;
+    return resolveRestrictedSessionExpiresAt();
+  });
+
+  const sessionExpiryTriggeredRef = useRef<boolean>(false);
+
   const currentUserRef = useRef<AppUser | null>(currentUser);
   useEffect(() => {
     currentUserRef.current = currentUser;
+    if (!currentUser) {
+      sessionExpiryTriggeredRef.current = false;
+    }
   }, [currentUser]);
 
   const usersRef = useRef<AppUser[]>(users);
@@ -752,6 +830,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               cache: 'no-store',
               credentials: 'include'
             });
+          } else if (isRestrictedLevelUser(currentUserRef.current)) {
+            try {
+              sessionStorage.setItem(SESSION_EXPIRED_NOTICE_KEY, LEVEL_1_2_SESSION_EXPIRED_MSG);
+            } catch {}
+            logout();
+            return;
           }
         }
 
@@ -904,6 +988,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               return;
             }
 
+            if (isRestrictedLevelUser(data.user)) {
+              const serverExp =
+                typeof data.sessionExpiresAt === 'number' && data.sessionExpiresAt > 0
+                  ? data.sessionExpiresAt
+                  : resolveRestrictedSessionExpiresAt() || (Date.now() + LEVEL_1_2_SESSION_DURATION_MS);
+              if (Date.now() >= serverExp) {
+                try {
+                  sessionStorage.setItem(SESSION_EXPIRED_NOTICE_KEY, LEVEL_1_2_SESSION_EXPIRED_MSG);
+                } catch {}
+                logout();
+                return;
+              }
+              try {
+                localStorage.setItem(SESSION_EXPIRES_AT_KEY, String(serverExp));
+              } catch {}
+              setSessionExpiresAt(serverExp);
+            } else {
+              try {
+                localStorage.removeItem(SESSION_EXPIRES_AT_KEY);
+              } catch {}
+              setSessionExpiresAt(null);
+            }
+
             setCurrentUser(prev => {
               if (!prev) return data.user;
               const updated = {
@@ -922,6 +1029,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } else if (res.status === 401 || res.status === 403) {
           // Token is expired on server
           if (isMounted) {
+            if (isRestrictedLevelUser(currentUserRef.current)) {
+              try {
+                sessionStorage.setItem(SESSION_EXPIRED_NOTICE_KEY, LEVEL_1_2_SESSION_EXPIRED_MSG);
+              } catch {}
+            }
             logout();
           }
         }
@@ -931,6 +1043,63 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     verifySession();
     return () => { isMounted = false; };
   }, []);
+
+  // Automatic 30-minute hard session timeout enforcement for ALL Level 1 and Level 2 users
+  useEffect(() => {
+    if (!currentUser || !isRestrictedLevelUser(currentUser)) {
+      return;
+    }
+
+    let targetExpiresAt = sessionExpiresAt || resolveRestrictedSessionExpiresAt();
+    if (!targetExpiresAt || !Number.isFinite(targetExpiresAt)) {
+      targetExpiresAt = Date.now() + LEVEL_1_2_SESSION_DURATION_MS;
+      try {
+        localStorage.setItem(SESSION_EXPIRES_AT_KEY, String(targetExpiresAt));
+      } catch {}
+      setSessionExpiresAt(targetExpiresAt);
+    }
+
+    const triggerExpirationLogout = () => {
+      if (sessionExpiryTriggeredRef.current) return;
+      sessionExpiryTriggeredRef.current = true;
+      try {
+        sessionStorage.setItem(SESSION_EXPIRED_NOTICE_KEY, LEVEL_1_2_SESSION_EXPIRED_MSG);
+      } catch {}
+      logout();
+    };
+
+    const checkExpiry = () => {
+      if (Date.now() >= (targetExpiresAt as number)) {
+        triggerExpirationLogout();
+        return true;
+      }
+      return false;
+    };
+
+    // Immediate check in case deadline already passed
+    if (checkExpiry()) {
+      return;
+    }
+
+    const remainingMs = Math.max(0, targetExpiresAt - Date.now());
+    const timeoutId = window.setTimeout(checkExpiry, remainingMs + 100);
+    const intervalId = window.setInterval(checkExpiry, 10000);
+    const onFocusOrVisible = () => {
+      if (document.visibilityState === 'visible') {
+        checkExpiry();
+      }
+    };
+
+    window.addEventListener('focus', onFocusOrVisible);
+    document.addEventListener('visibilitychange', onFocusOrVisible);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', onFocusOrVisible);
+      document.removeEventListener('visibilitychange', onFocusOrVisible);
+    };
+  }, [currentUser?.id, currentUser?.level, sessionExpiresAt]);
 
   const login = async (usernameInput: string, passwordInput: string, pinInput?: string): Promise<{ success: boolean; message?: string; requirePin?: boolean; mustChangePassword?: boolean; user?: any }> => {
     const cleanUser = normalizeDigits(usernameInput).trim().toUpperCase();
@@ -999,6 +1168,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           } catch (e) {}
         }
 
+        // Set 30-minute session expiry for Level 1 & Level 2 users (and clear old expiry notice)
+        sessionExpiryTriggeredRef.current = false;
+        try {
+          sessionStorage.removeItem(SESSION_EXPIRED_NOTICE_KEY);
+        } catch {}
+        if (isRestrictedLevelUser(mergedUser)) {
+          const expiresAt =
+            typeof result.sessionExpiresAt === 'number' && result.sessionExpiresAt > Date.now()
+              ? result.sessionExpiresAt
+              : Date.now() + LEVEL_1_2_SESSION_DURATION_MS;
+          try {
+            localStorage.setItem(SESSION_EXPIRES_AT_KEY, String(expiresAt));
+          } catch {}
+          setSessionExpiresAt(expiresAt);
+        } else {
+          try {
+            localStorage.removeItem(SESSION_EXPIRES_AT_KEY);
+          } catch {}
+          setSessionExpiresAt(null);
+        }
+
         setCurrentUser(mergedUser);
         try {
           localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(mergedUser));
@@ -1058,8 +1248,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setCurrentUser(null);
     currentUserRef.current = null;
+    setSessionExpiresAt(null);
     try {
       localStorage.removeItem(CURRENT_USER_KEY);
+      localStorage.removeItem(SESSION_EXPIRES_AT_KEY);
       localStorage.removeItem('auth_token');
       sessionStorage.removeItem('auth_token');
       localStorage.removeItem('access_token');
@@ -1092,7 +1284,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       const data = await res.json();
       setCurrentUser(null);
-      try { localStorage.removeItem(CURRENT_USER_KEY); } catch (e) {}
+      setSessionExpiresAt(null);
+      try {
+        localStorage.removeItem(CURRENT_USER_KEY);
+        localStorage.removeItem(SESSION_EXPIRES_AT_KEY);
+      } catch (e) {}
       return { success: res.ok && data.success, message: data.message };
     } catch (e: unknown) {
       const errMsg = e instanceof Error ? e.message : 'خطا در ابطال نشست‌ها.';

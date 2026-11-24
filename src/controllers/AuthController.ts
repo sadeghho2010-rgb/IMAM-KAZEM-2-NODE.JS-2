@@ -18,7 +18,9 @@ import {
   logServerAudit,
   StoredUser,
   isConnectionError,
-  DbConnectionError
+  DbConnectionError,
+  isLevel1Or2User,
+  LEVEL_1_2_SESSION_DURATION_MS
 } from '../lib/serverAuth';
 
 export class AuthController {
@@ -94,12 +96,13 @@ export class AuthController {
       }
 
       const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https';
+      const isRestrictedLevel = isLevel1Or2User(result.user);
 
       res.cookie('auth_access_token', result.token, {
         httpOnly: true,
         secure: isHttps,
         sameSite: 'strict',
-        maxAge: 15 * 60 * 1000,
+        maxAge: isRestrictedLevel ? LEVEL_1_2_SESSION_DURATION_MS : 15 * 60 * 1000,
         path: '/'
       });
 
@@ -107,7 +110,7 @@ export class AuthController {
         httpOnly: true,
         secure: isHttps,
         sameSite: 'strict',
-        maxAge: 7 * 24 * 60 * 60 * 1000,
+        maxAge: isRestrictedLevel ? LEVEL_1_2_SESSION_DURATION_MS : 7 * 24 * 60 * 60 * 1000,
         path: '/'
       });
 
@@ -134,7 +137,8 @@ export class AuthController {
         message: 'ورود با موفقیت انجام شد.',
         user: result.user,
         token: result.token,
-        refreshToken: result.refreshToken
+        refreshToken: result.refreshToken,
+        sessionExpiresAt: result.sessionExpiresAt ?? null
       });
     } catch (error: any) {
       const isDbConnError = isConnectionError(error) ||
@@ -207,9 +211,19 @@ export class AuthController {
         return res.status(401).json({ authenticated: false, message: 'کاربر یافت نشد یا مسدود است.' });
       }
 
+      const safeUser = sanitizeUser(user);
+      const sessionExpiresAt = isLevel1Or2User(safeUser)
+        ? (typeof verified.decoded.sessionExpiresAt === 'number'
+            ? verified.decoded.sessionExpiresAt
+            : typeof verified.decoded.iat === 'number'
+              ? verified.decoded.iat * 1000 + LEVEL_1_2_SESSION_DURATION_MS
+              : null)
+        : null;
+
       return res.status(200).json({
         authenticated: true,
-        user: sanitizeUser(user)
+        user: safeUser,
+        sessionExpiresAt
       });
     } catch (error) {
       next(error);
@@ -764,20 +778,36 @@ export class AuthController {
       const result = await AuthService.refreshToken(token, ip);
 
       const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https';
+      const isRestrictedLevel = isLevel1Or2User(result.user);
+      const restrictedRemainingMs =
+        isRestrictedLevel && typeof result.sessionExpiresAt === 'number'
+          ? Math.max(0, result.sessionExpiresAt - Date.now())
+          : 15 * 60 * 1000;
 
       res.cookie('auth_access_token', result.token, {
         httpOnly: true,
         secure: isHttps,
         sameSite: isHttps ? 'none' : 'lax',
-        maxAge: 15 * 60 * 1000,
+        maxAge: isRestrictedLevel ? restrictedRemainingMs : 15 * 60 * 1000,
         path: '/'
       });
+
+      if (isRestrictedLevel) {
+        res.cookie('auth_refresh_token', result.refreshToken, {
+          httpOnly: true,
+          secure: isHttps,
+          sameSite: isHttps ? 'none' : 'lax',
+          maxAge: restrictedRemainingMs,
+          path: '/'
+        });
+      }
 
       return res.status(200).json({
         success: true,
         token: result.token,
         refreshToken: result.refreshToken,
-        user: result.user
+        user: result.user,
+        sessionExpiresAt: result.sessionExpiresAt ?? null
       });
     } catch (error) {
       next(error);

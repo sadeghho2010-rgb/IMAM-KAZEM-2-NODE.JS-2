@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { useAuth, DEFAULT_USERS } from '../../context/AuthContext';
+import { useAuth, DEFAULT_USERS, SESSION_EXPIRED_NOTICE_KEY } from '../../context/AuthContext';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Lock,
@@ -18,7 +18,8 @@ import {
   ChevronDown,
   X,
   Check,
-  Wrench
+  Wrench,
+  Clock
 } from 'lucide-react';
 import { AppUser } from '../../types/auth';
 import { Teacher } from '../../types';
@@ -39,6 +40,16 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [sessionExpiredMessage, setSessionExpiredMessage] = useState<string | null>(() => {
+    try {
+      const msg = sessionStorage.getItem(SESSION_EXPIRED_NOTICE_KEY);
+      if (msg) {
+        sessionStorage.removeItem(SESSION_EXPIRED_NOTICE_KEY);
+        return msg;
+      }
+    } catch {}
+    return null;
+  });
   const [showIntroFlare, setShowIntroFlare] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     try {
@@ -444,6 +455,31 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                 type="button"
                 onClick={() => setSuccessMessage(null)}
                 className="text-white/60 hover:text-white transition-colors p-0.5 rounded"
+              >
+                <X size={14} />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Session Timeout Notice (Level 1 & Level 2 30-Minute Session Limit) */}
+        <AnimatePresence>
+          {sessionExpiredMessage && (
+            <motion.div
+              initial={{ opacity: 0, y: -10, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.96 }}
+              transition={{ duration: 0.25 }}
+              className="mb-5 p-3.5 rounded-xl bg-amber-500/20 border border-amber-400/50 backdrop-blur-md text-white text-xs sm:text-sm font-medium flex items-start gap-2.5 shadow-lg"
+              role="alert"
+            >
+              <Clock size={18} className="text-amber-300 shrink-0 mt-0.5" />
+              <div className="flex-1 leading-relaxed text-amber-100">{sessionExpiredMessage}</div>
+              <button
+                type="button"
+                onClick={() => setSessionExpiredMessage(null)}
+                className="text-white/60 hover:text-white transition-colors p-0.5 rounded cursor-pointer"
+                title="بستن پیام"
               >
                 <X size={14} />
               </button>

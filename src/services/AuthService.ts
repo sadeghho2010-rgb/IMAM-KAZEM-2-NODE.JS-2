@@ -25,7 +25,9 @@ import {
   SafeUser,
   normalizeDigits,
   DbConnectionError,
-  isConnectionError
+  isConnectionError,
+  isLevel1Or2User,
+  LEVEL_1_2_SESSION_DURATION_MS
 } from '../lib/serverAuth';
 import { AppError } from '../lib/errorHandler';
 import { logger } from '../lib/logger';
@@ -174,7 +176,7 @@ export class AuthService {
 
     const safeUser = sanitizeUser(user);
     const tJwtStart = Date.now();
-    const { token, refreshToken } = generateTokens(safeUser);
+    const { token, refreshToken, sessionExpiresAt } = generateTokens(safeUser);
     console.log(`[LOGIN_BENCHMARK] 3. JWT Generation: ${Date.now() - tJwtStart}ms`);
     console.log(`[LOGIN_BENCHMARK] TOTAL Auth Service Time: ${Date.now() - tStart}ms`);
 
@@ -190,7 +192,7 @@ export class AuthService {
       ipAddress: clientIp
     }).catch(() => {});
 
-    return { user: safeUser, token, refreshToken };
+    return { user: safeUser, token, refreshToken, sessionExpiresAt };
   }
 
   /**
@@ -218,9 +220,30 @@ export class AuthService {
     }
 
     const safeUser = sanitizeUser(user);
-    const { token, refreshToken: newRefreshToken } = generateTokens(safeUser);
 
-    return { user: safeUser, token, refreshToken: newRefreshToken };
+    // Level 1 & Level 2 users MUST NOT have their 30-minute session extended by token refresh
+    if (isLevel1Or2User(safeUser)) {
+      const nowMs = Date.now();
+      const origExpiresAt =
+        typeof verified.decoded.sessionExpiresAt === 'number'
+          ? verified.decoded.sessionExpiresAt
+          : typeof verified.decoded.iat === 'number'
+            ? verified.decoded.iat * 1000 + LEVEL_1_2_SESSION_DURATION_MS
+            : 0;
+
+      if (!origExpiresAt || nowMs >= origExpiresAt) {
+        throw new AppError('مهلت ۳۰ دقیقه‌ای نشست کاربری (سطح ۱ و ۲) به پایان رسیده است. لطفاً مجدداً وارد شوید.', { statusCode: 401 });
+      }
+
+      const { token, refreshToken: newRefreshToken, sessionExpiresAt } = generateTokens(safeUser, {
+        fixedExpiresAtMs: origExpiresAt
+      });
+      return { user: safeUser, token, refreshToken: newRefreshToken, sessionExpiresAt };
+    }
+
+    const { token, refreshToken: newRefreshToken, sessionExpiresAt } = generateTokens(safeUser);
+
+    return { user: safeUser, token, refreshToken: newRefreshToken, sessionExpiresAt };
   }
 
   /**
