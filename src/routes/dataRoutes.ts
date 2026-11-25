@@ -292,133 +292,38 @@ router.get('/data/bootstrap', async (req: Request, res: Response) => {
 });
 
 // ===================== DATABASE SNAPSHOT & BACKUP ENDPOINTS =====================
+const BACKUP_WEB_UI_DISABLED_MESSAGE = 'این بخش موقتاً غیرفعال و در حال طراحی است';
 
-// GET /api/database/snapshot
-router.get('/database/snapshot', async (req: Request, res: Response) => {
-  const token = extractToken(req);
-  if (!token) return res.status(401).json({ success: false, message: 'احراز هویت الزامی است.' });
-
-  const verification = verifyAccessToken(token);
-  if (!verification.valid || !verification.decoded) {
-    return res.status(403).json({ success: false, message: 'مجوز نامعتبر است.' });
-  }
-
-  const { isAuthorizedForMonitoring } = await import('../config/monitoringAccess');
-  if (!isAuthorizedForMonitoring(verification.decoded)) {
-    return res.status(403).json({ success: false, message: 'فقط کاربران ارشد (مدیر ارشد، مسئول آموزش، مسئول مالی) مجاز به دانلود پشتیبان کامل هستند.' });
-  }
-
-  const operatorName = verification.decoded.name || verification.decoded.username || 'مدیر سامانه';
-
-  const { createFullDatabaseSnapshot } = await import('../lib/serverBackupEngine');
-  const { logServerAudit } = await import('../lib/serverAuth');
-  try {
-    const snapshot = await createFullDatabaseSnapshot(verification.decoded.username || 'operator', false);
-    const filename = `madrasah_backup_${snapshot.metadata.timestamp.substring(0, 10)}.json`;
-
-    // Record audit log for backup download
-    await logServerAudit({
-      userId: String(verification.decoded.id || verification.decoded.userId || 'admin'),
-      username: verification.decoded.username || 'admin',
-      userRole: verification.decoded.role || 'manager',
-      action: 'DATABASE_BACKUP_DOWNLOADED',
-      entityType: 'database',
-      entityId: filename,
-      description: `دانلود فایل پشتیبان کامل دیتابیس (${snapshot.metadata.totalRecordsCount} رکورد) توسط ${operatorName}`,
-      ipAddress: getClientIp(req)
-    });
-
-    res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    return res.send(JSON.stringify(snapshot, null, 2));
-  } catch (err: unknown) {
-    return res.status(500).json({ success: false, message: 'خطا در تهیه نسخه پشتیبان کامل دیتابیس.' });
-  }
+// GET /api/database/snapshot - Disabled on web interface
+router.get('/database/snapshot', (_req: Request, res: Response) => {
+  return res.status(503).json({
+    success: false,
+    message: BACKUP_WEB_UI_DISABLED_MESSAGE
+  });
 });
 
-// GET /api/database/full-system-export - JSON payload for client integration
-router.get('/database/full-system-export', async (req: Request, res: Response) => {
-  const token = extractToken(req);
-  if (!token) {
-    return res.status(401).json({ success: false, message: 'احراز هویت الزامی است.' });
-  }
-
-  const verification = verifyAccessToken(token);
-  if (!verification.valid || !verification.decoded) {
-    return res.status(401).json({ success: false, message: 'نشست شما معتبر نیست یا منقضی شده است.' });
-  }
-
-  const callerUser = await getEnrichedCallerUser(verification.decoded);
-  const { isAuthorizedForMonitoring } = await import('../config/monitoringAccess');
-  if (!isAuthorizedForMonitoring(callerUser)) {
-    return res.status(403).json({
-      success: false,
-      message: 'فقط مدیران مجاز سامانه (مدیر ارشد، مسئول آموزش، مسئول مالی) مجاز به دریافت خروجی کامل سیستم هستند.'
-    });
-  }
-
-  const operatorName = callerUser?.username || 'operator';
-  const { createFullDatabaseSnapshot } = await import('../lib/serverBackupEngine');
-  try {
-    const snapshot = await createFullDatabaseSnapshot(operatorName, false);
-    return res.json({ success: true, snapshot });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, message: 'خطا در واکشی پشتیبان کامل سرور', error: err?.message });
-  }
+// GET /api/database/full-system-export - Disabled on web interface
+router.get('/database/full-system-export', (_req: Request, res: Response) => {
+  return res.status(503).json({
+    success: false,
+    message: BACKUP_WEB_UI_DISABLED_MESSAGE
+  });
 });
 
-// POST /api/database/restore-snapshot
-router.post('/database/restore-snapshot', async (req: Request, res: Response) => {
-  const token = extractToken(req);
-  if (!token) return res.status(401).json({ success: false, message: 'احراز هویت الزامی است.' });
-
-  const verification = verifyAccessToken(token);
-  if (!verification.valid || !verification.decoded) {
-    return res.status(403).json({ success: false, message: 'مجوز نامعتبر است.' });
-  }
-
-  const { isAuthorizedForMonitoring } = await import('../config/monitoringAccess');
-  if (!isAuthorizedForMonitoring(verification.decoded)) {
-    return res.status(403).json({ 
-      success: false, 
-      message: 'فقط کاربران ارشد سامانه (مدیر ارشد، مسئول آموزش یا مسئول مالی) مجاز به بازگردانی کامل پایگاه داده هستند.' 
-    });
-  }
-
-  const { snapshotPayload } = req.body || {};
-  if (!snapshotPayload || typeof snapshotPayload !== 'object') {
-    return res.status(400).json({ success: false, message: 'محتوای فایل پشتیبان نامعتبر است.' });
-  }
-
-  const { restoreDatabaseSnapshot } = await import('../lib/serverBackupEngine');
-  const result = await restoreDatabaseSnapshot(snapshotPayload, verification.decoded.username || 'operator', getClientIp(req));
-  return res.status(result.success ? 200 : 400).json(result);
+// POST /api/database/restore-snapshot - Disabled on web interface
+router.post('/database/restore-snapshot', (_req: Request, res: Response) => {
+  return res.status(503).json({
+    success: false,
+    message: BACKUP_WEB_UI_DISABLED_MESSAGE
+  });
 });
 
-// GET /api/database/scheduled-backups
-router.get('/database/scheduled-backups', async (req: Request, res: Response) => {
-  const token = extractToken(req);
-  if (!token) {
-    return res.status(401).json({ success: false, message: 'احراز هویت الزامی است.' });
-  }
-
-  const verification = verifyAccessToken(token);
-  if (!verification.valid || !verification.decoded) {
-    return res.status(401).json({ success: false, message: 'نشست شما معتبر نیست یا منقضی شده است.' });
-  }
-
-  const callerUser = await getEnrichedCallerUser(verification.decoded);
-  const { isAuthorizedForMonitoring } = await import('../config/monitoringAccess');
-  if (!isAuthorizedForMonitoring(callerUser)) {
-    return res.status(403).json({
-      success: false,
-      message: 'فقط مدیران مجاز سامانه مجاز به مشاهده فهرست نسخه‌های پشتیبان هستند.'
-    });
-  }
-
-  const { listOnDiskBackups } = await import('../lib/serverBackupEngine');
-  const backups = listOnDiskBackups();
-  return res.json({ success: true, backups });
+// GET /api/database/scheduled-backups - Disabled on web interface
+router.get('/database/scheduled-backups', (_req: Request, res: Response) => {
+  return res.status(503).json({
+    success: false,
+    message: BACKUP_WEB_UI_DISABLED_MESSAGE
+  });
 });
 
 // POST /api/database/scheduled-backups/run-now
