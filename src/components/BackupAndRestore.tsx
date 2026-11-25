@@ -176,10 +176,23 @@ export default function BackupAndRestore() {
     computedChecksum: string;
   } | null>(null);
 
+  const getAuthFetchOptions = (extraHeaders: Record<string, string> = {}) => {
+    const token =
+      localStorage.getItem('auth_token') ||
+      sessionStorage.getItem('auth_token') ||
+      localStorage.getItem('access_token') ||
+      sessionStorage.getItem('access_token') ||
+      localStorage.getItem('token') ||
+      sessionStorage.getItem('token');
+    const headers: Record<string, string> = { ...extraHeaders };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    return { headers, credentials: 'include' as RequestCredentials };
+  };
+
   const loadScheduledBackups = async () => {
     setIsLoadingDiskBackups(true);
     try {
-      const res = await fetch('/api/database/scheduled-backups');
+      const res = await fetch('/api/database/scheduled-backups', getAuthFetchOptions());
       const data = await res.json();
       if (data.success && Array.isArray(data.backups)) {
         setOnDiskBackups(data.backups);
@@ -194,7 +207,7 @@ export default function BackupAndRestore() {
   const handleDownloadFullSnapshot = async () => {
     setIsTakingSnapshot(true);
     try {
-      const res = await fetch('/api/database/snapshot');
+      const res = await fetch('/api/database/snapshot', getAuthFetchOptions());
       if (!res.ok) throw new Error('خطا در دریافت خروجی اسنپ‌شات از سرور.');
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -220,7 +233,10 @@ export default function BackupAndRestore() {
   const handleTriggerScheduledNow = async () => {
     setIsTakingSnapshot(true);
     try {
-      const res = await fetch('/api/database/scheduled-backups/run-now', { method: 'POST' });
+      const res = await fetch('/api/database/scheduled-backups/run-now', {
+        method: 'POST',
+        ...getAuthFetchOptions()
+      });
       const data = await res.json();
       if (res.ok && data.success) {
         setStatusMessage({ type: 'success', text: data.message });
@@ -279,7 +295,7 @@ export default function BackupAndRestore() {
     try {
       const res = await fetch('/api/database/restore-snapshot', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        ...getAuthFetchOptions({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ snapshotPayload: { metadata: snapshotPreviewData.metadata, data: snapshotPreviewData.data } })
       });
       const data = await res.json();

@@ -90,16 +90,30 @@ export type CallerUser = SafeUser & {
   isSpecialAdmin?: boolean;
 };
 
-// Secure fallback mechanism for JWT secrets: use environment secrets if provided, else use resilient fallback
+const isInvalidJwtSecret = (raw: string): boolean => !raw || raw.startsWith('{{') || raw.startsWith('${{');
+
 const rawRefreshSecret = (process.env.JWT_REFRESH_SECRET || '').trim();
-const JWT_REFRESH_SECRET = (rawRefreshSecret && !rawRefreshSecret.startsWith('{{'))
+const rawJwtSecret = (process.env.JWT_SECRET || '').trim();
+
+if (process.env.NODE_ENV === 'production') {
+  if (isInvalidJwtSecret(rawJwtSecret)) {
+    throw new Error('[CONFIG FATAL] JWT_SECRET is missing or contains an unresolved template placeholder in production.');
+  }
+  if (isInvalidJwtSecret(rawRefreshSecret)) {
+    throw new Error('[CONFIG FATAL] JWT_REFRESH_SECRET is missing or contains an unresolved template placeholder in production.');
+  }
+  if (rawJwtSecret === rawRefreshSecret) {
+    throw new Error('[CONFIG FATAL] JWT_SECRET and JWT_REFRESH_SECRET must be distinct values in production.');
+  }
+}
+
+const JWT_REFRESH_SECRET = !isInvalidJwtSecret(rawRefreshSecret)
   ? rawRefreshSecret
   : 'hosoon_super_secure_refresh_token_secret_key_2026_default_fallback_node_app';
 
-const rawJwtSecret = (process.env.JWT_SECRET || '').trim();
-const JWT_SECRET = (rawJwtSecret && !rawJwtSecret.startsWith('{{'))
+const JWT_SECRET = !isInvalidJwtSecret(rawJwtSecret)
   ? rawJwtSecret
-  : (JWT_REFRESH_SECRET + '_access_token_secret');
+  : 'hosoon_super_secure_access_token_secret_key_2026_default_fallback_node_app';
 
 
 

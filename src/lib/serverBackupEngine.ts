@@ -43,6 +43,7 @@ export const ALL_SYSTEM_COLLECTIONS = [
   'finance_expenses',
   'finance_operational_expenses',
   'finance_loans',
+  'loans',
   'finance_staff',
   'finance_meal_holidays',
   'finance_meal_periods',

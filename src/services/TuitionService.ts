@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import { serverQueryCollection, serverSaveDoc, serverDeleteDoc, authorizeCollectionAccess } from '../lib/serverDataApi';
+import {
+  serverQueryCollection,
+  serverSaveDoc,
+  serverDeleteDoc,
+  authorizeCollectionAccess,
+  isStudentLevelUser,
+  resolveAuthoritativeStudentIdentity
+} from '../lib/serverDataApi';
 import { AppError } from '../lib/errorHandler';
 import { logServerAudit } from '../lib/serverAuth';
 import { logger } from '../lib/logger';
@@ -199,6 +206,12 @@ export class TuitionService {
    * Fetch tuition history for a single student
    */
   public static async getTuitionByStudent(studentId: string, callerUser?: any) {
+    if (isStudentLevelUser(callerUser)) {
+      const identity = await resolveAuthoritativeStudentIdentity(callerUser);
+      if (!identity.candidates.includes(String(studentId || '').trim().toLowerCase())) {
+        throw new AppError('شما تنها مجاز به مشاهده سوابق شهریه خود هستید.', { statusCode: 403 });
+      }
+    }
     const records = await this.getAllTuitionRecords({}, callerUser);
     return records.filter((r: any) => r.studentId === studentId);
   }
@@ -263,6 +276,10 @@ export class TuitionService {
    * Mark a tuition record as paid
    */
   public static async markAsPaid(recordId: string, callerUser?: any) {
+    const authCheck = authorizeCollectionAccess(callerUser, 'tuition_records', 'write');
+    if (!authCheck.allowed) {
+      throw new AppError(authCheck.reason || 'شما مجوز ثبت پرداخت شهریه را ندارید.', { statusCode: 403 });
+    }
     const records = await this.getAllTuitionRecords({}, callerUser);
     const target = records.find((r: any) => r.id === recordId);
     if (!target) {

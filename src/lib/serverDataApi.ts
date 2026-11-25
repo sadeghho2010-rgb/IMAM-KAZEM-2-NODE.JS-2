@@ -186,15 +186,220 @@ export async function deleteDataFromServer(collection: string, id: string): Prom
   }
 }
 
-// Sensitive collections requiring elevated roles
+// Sensitive collections requiring elevated finance/admin roles
 const FINANCIAL_COLLECTIONS = new Set([
-  'tuition_records', 'tuition_periods', 'finance_loans', 'finance_expenses',
+  'tuition_records', 'tuition_periods', 'finance_loans', 'loans', 'finance_expenses',
   'finance_operational_expenses', 'finance_budget_rows', 'finance_student_claims'
 ]);
 
 const USER_SPECIFIC_COLLECTIONS = new Set([
   'personal_todos', 'user_todo_categories'
 ]);
+
+const SHARED_SCHOOL_READ_COLLECTIONS = new Set([
+  'academic_holidays', 'academic_calendar_periods', 'academic_holiday_types',
+  'academic_sub_periods', 'academic_weekly_programs', 'school_events',
+  'curriculum_subjects', 'curriculum_books', 'curriculum_chapters',
+  'student_portal_access_config', 'settings', 'system_settings',
+  'attendance_settings', 'unit_request_settings', 'global_requests_config',
+  'programs', 'classrooms', 'classes', 'teachers', 'teacher_schedules',
+  'enrollments', 'course_enrollments',
+  'study_periods', 'study_stats', 'periodic_study_logs', 'study_daily_entries',
+  'course_selection_periods', 'course_selection_requests',
+  'meal_periods', 'meal_reservation_periods', 'lunch_periods', 'student_meal_periods',
+  'finance_meal_periods', 'finance_meal_holidays', 'finance_meal_person_categories',
+  'meal_cancelled_days', 'meal_reservations', 'lunch_reservations',
+  'student_meal_reservations', 'finance_student_meal_reservations',
+  'oral_exam_periods', 'oral_exam_scope_books', 'oral_exams', 'oral_exam_records',
+  'research_skills_def', 'student_research_skills', 'research', 'research_records', 'research_history',
+  'article_evaluations', 'received_articles', 'evaluation_requests',
+  'discussion_groups', 'conversation_archives',
+  'student_course_progress', 'passed_courses',
+  'student_lockers', 'lockers', 'locker_history',
+  'counseling_sessions', 'counseling_grades', 'counseling_session_grades',
+  'student_comments', 'comments',
+  'students', 'attendance', 'student_requests',
+  'tuition_records',
+  'assigned_todos', 'todos', 'workflow_items', 'workflow', 'workflow_settings',
+  'representative_notes', 'announcements', 'announcement_dismissals',
+  'personal_todos', 'user_todo_categories', 'custom_student_schedules',
+  'fund_donations', 'fund_donation_configs',
+  'system_section_permissions', 'system_health_config'
+]);
+
+const SHARED_METADATA_READ_COLLECTIONS = new Set([
+  'academic_holidays', 'academic_calendar_periods', 'academic_holiday_types',
+  'academic_sub_periods', 'academic_weekly_programs', 'school_events',
+  'curriculum_subjects', 'curriculum_books', 'curriculum_chapters',
+  'student_portal_access_config', 'settings', 'system_settings',
+  'attendance_settings', 'unit_request_settings', 'global_requests_config',
+  'programs', 'classrooms', 'classes', 'teachers', 'teacher_schedules',
+  'enrollments', 'course_enrollments',
+  'study_periods', 'study_stats',
+  'course_selection_periods',
+  'meal_periods', 'meal_reservation_periods', 'lunch_periods', 'student_meal_periods',
+  'finance_meal_periods', 'finance_meal_holidays', 'finance_meal_person_categories',
+  'meal_cancelled_days',
+  'oral_exam_periods', 'oral_exam_scope_books',
+  'research_skills_def', 'article_evaluations', 'discussion_groups',
+  'announcements', 'system_section_permissions', 'representative_notes',
+  'fund_donation_configs', 'system_health_config'
+]);
+
+const STAFF_OPERATIONAL_COLLECTIONS = new Set([
+  ...SHARED_SCHOOL_READ_COLLECTIONS,
+  'tuition_periods', 'tuition_settings', 'student_financial_profiles',
+  'finance_staff', 'finance_grade_mentors', 'finance_grade_mentor_periods',
+  'finance_destination_accounts', 'finance_claim_categories',
+  'finance_fund_contributions', 'finance_lunch_students', 'finance_teachers_periods',
+  'destination_accounts', 'student_claims', 'education_financial_reports',
+  'drivers', 'teacher_transport_routines', 'teacher_transport_trips',
+  'staff', 'presence_hours_logs', 'presence_reports', 'manager_files',
+  'db_save_errors', 'bug_reports', 'cloud_backups', 'anomaly_logs', 'app_logs'
+]);
+
+const STUDENT_WRITABLE_COLLECTIONS = new Set([
+  'student_requests',
+  'study_daily_entries',
+  'periodic_study_logs',
+  'course_selection_requests',
+  'student_meal_reservations',
+  'finance_student_meal_reservations',
+  'meal_reservations',
+  'lunch_reservations',
+  'received_articles',
+  'evaluation_requests',
+  'custom_student_schedules',
+  'personal_todos',
+  'user_todo_categories',
+  'assigned_todos',
+  'workflow_items',
+  'announcement_dismissals',
+  'attendance',
+  'db_save_errors'
+]);
+
+const STUDENT_DELETABLE_COLLECTIONS = new Set([
+  'personal_todos',
+  'user_todo_categories',
+  'study_daily_entries',
+  'periodic_study_logs',
+  'received_articles',
+  'custom_student_schedules'
+]);
+
+export function isClassRepresentativeUser(user: any): boolean {
+  if (!user) return false;
+  return Boolean(
+    user.role === 'class_representative' ||
+    user.isClassRep === true ||
+    user.managedClassId ||
+    (user.roleTitle && String(user.roleTitle).includes('نماینده')) ||
+    (Array.isArray(user.representativeProgramIds) && user.representativeProgramIds.length > 0)
+  );
+}
+
+export function isStudentLevelUser(user: any): boolean {
+  if (!user) return false;
+  if (user.role === 'teacher') return false;
+  if (Number(user.level) === 1 || Number(user.level) === 2) return false;
+  return user.role === 'student' || user.role === 'class_representative' || Number(user.level) === 3;
+}
+
+export function isRegularStudentUser(user: any): boolean {
+  return isStudentLevelUser(user) && !isClassRepresentativeUser(user);
+}
+
+export function getUserIdentityCandidates(user: any): string[] {
+  if (!user) return [];
+  return Array.from(new Set(
+    [
+      user.id,
+      user.userId,
+      user.studentId,
+      user.linkedStudentId,
+      user.username,
+      user.nationalCode,
+      user.nationalId
+    ]
+      .filter(Boolean)
+      .map((x: any) => String(x).trim().toLowerCase())
+  ));
+}
+
+export async function resolveAuthoritativeStudentIdentity(user: any): Promise<{
+  studentId: string;
+  studentName: string;
+  nationalCode: string;
+  userId: string;
+  candidates: string[];
+}> {
+  const candidates = getUserIdentityCandidates(user);
+  let matchedStudent: any = null;
+  try {
+    const allStudents = await fetchRawCollectionData('students');
+    const uSid = String(user?.studentId || user?.linkedStudentId || '').trim().toLowerCase();
+    const uId = String(user?.id || user?.userId || '').trim().toLowerCase();
+    const uName = String(user?.username || '').trim().toLowerCase();
+
+    matchedStudent = (allStudents || []).find((s: any) => {
+      if (!s) return false;
+      const sId = String(s.id || '').trim().toLowerCase();
+      const sCode = String(s.studentCode || '').trim().toLowerCase();
+      const sNat = String(s.nationalId || s.nationalCode || '').trim().toLowerCase();
+      if (uSid && (sId === uSid || sCode === uSid || sNat === uSid)) return true;
+      if (uId && sId === uId) return true;
+      if (uName && (sCode === uName || sNat === uName || sId === uName)) return true;
+      return false;
+    });
+  } catch {}
+
+  const studentId = String(
+    matchedStudent?.id || user?.studentId || user?.linkedStudentId || user?.id || user?.userId || ''
+  ).trim();
+  const studentName = String(
+    matchedStudent?.name || matchedStudent?.fullName || user?.studentName || user?.fullName || user?.name || user?.username || ''
+  ).trim();
+  const nationalCode = String(
+    matchedStudent?.nationalId || matchedStudent?.nationalCode || user?.nationalCode || user?.nationalId || user?.username || ''
+  ).trim();
+  const userId = String(user?.id || user?.userId || studentId || '').trim();
+
+  const fullCandidates = Array.from(new Set([
+    ...candidates,
+    studentId.toLowerCase(),
+    nationalCode.toLowerCase(),
+    matchedStudent?.studentCode ? String(matchedStudent.studentCode).trim().toLowerCase() : ''
+  ].filter(Boolean)));
+
+  return { studentId, studentName, nationalCode, userId, candidates: fullCandidates };
+}
+
+export function isMatchingStudentEntry(entry: any, candidates: string[], user?: any): boolean {
+  if (!entry || typeof entry !== 'object') return false;
+  const entryIds = [
+    entry.studentId,
+    entry.student_id,
+    entry.userId,
+    entry.user_id,
+    entry.nationalId,
+    entry.nationalCode,
+    entry.studentCode
+  ]
+    .filter(Boolean)
+    .map((v: any) => String(v).trim().toLowerCase());
+
+  if (entryIds.some(eid => candidates.includes(eid))) {
+    return true;
+  }
+
+  const uName = String(user?.name || user?.fullName || user?.studentName || '').trim().toLowerCase();
+  const eName = String(entry.studentName || entry.name || '').trim().toLowerCase();
+  if (entryIds.length === 0 && uName && eName && uName === eName) {
+    return true;
+  }
+  return false;
+}
 
 // Helper to normalize teacher names for robust matching
 function cleanTeacherName(raw: string | undefined | null): string {
@@ -376,16 +581,30 @@ export function authorizeCollectionAccess(
 
   // Research and Article Evaluation
   if (collection === 'received_articles' || collection === 'evaluation_requests') {
-    if (user.level === 3 && action === 'write') {
+    if (isStudentLevelUser(user) && action === 'write') {
+      if (recordOwnerId) {
+        const candidates = getUserIdentityCandidates(user);
+        if (!candidates.includes(String(recordOwnerId).trim().toLowerCase())) {
+          return { allowed: false, reason: 'شما فقط مجاز به ثبت اطلاعات پژوهشی خود هستید.' };
+        }
+      }
       return { allowed: true };
     }
   }
 
   // System Users Security Check (Strict: Only Level 1 or Authorized Managers)
-  if (collection === 'system_users') {
-    if (user.level > 1 && user.role !== 'education_manager' && user.role !== 'education_officer' && String(user.username || '').toUpperCase() !== 'SHAH') {
+  if (collection === 'system_users' || collection === 'all_users' || collection === 'users') {
+    const uName = String(user.username || '').toUpperCase();
+    const isUserManager =
+      Number(user.level) === 1 ||
+      user.role === 'education_manager' ||
+      user.role === 'education_officer' ||
+      uName === 'SHAH' ||
+      uName === 'SADEGH';
+    if (!isUserManager) {
       return { allowed: false, reason: 'مشاهده و مدیریت کاربران سیستم منحصراً در اختیار مدیر ارشد و مسئول آموزش است.' };
     }
+    return { allowed: true };
   }
 
   // Audit Logs (Read and Revert status update allowed for Super Admin and Education Manager)
@@ -407,18 +626,161 @@ export function authorizeCollectionAccess(
     return { allowed: true };
   }
 
-  // Grade Mentor restrictions
-  if (user.role === 'grade_mentor' && user.gradeLabel) {
-    return { allowed: true };
+  // Finance Staff (authorized across finance/meal/transport/requests/school-read; FINANCIAL_COLLECTIONS already handled above)
+  const uUpper = String(user.username || '').toUpperCase();
+  const isFinanceStaff =
+    user.role === 'finance_manager' ||
+    user.role === 'financial_officer' ||
+    uUpper === 'MALI';
+  if (isFinanceStaff) {
+    if (STAFF_OPERATIONAL_COLLECTIONS.has(collection)) {
+      return { allowed: true };
+    }
+    return { allowed: false, reason: 'دسترسی به این کالکشن برای نقش امور مالی مجاز نیست.' };
   }
 
-  // Education Managers
-  if (user.role === 'education_manager' || user.role === 'education_officer') {
-    return { allowed: true };
+  // Education Managers / Officers
+  if (
+    user.role === 'education_manager' ||
+    user.role === 'education_officer' ||
+    uUpper === 'SHAH' ||
+    uUpper === 'SHAHPOORI'
+  ) {
+    if (STAFF_OPERATIONAL_COLLECTIONS.has(collection)) {
+      return { allowed: true };
+    }
+    return { allowed: false, reason: 'دسترسی به این بخش برای نقش آموزش تعریف نشده است.' };
   }
 
-  // Default allowed for authenticated users on educational collections (read only unless specified)
-  return { allowed: true };
+  // Grade Mentor
+  if ((user.role === 'grade_mentor' || user.role === 'mentor') && (user.gradeLabel || user.grade || user.mentorId)) {
+    if (STAFF_OPERATIONAL_COLLECTIONS.has(collection)) {
+      return { allowed: true };
+    }
+    return { allowed: false, reason: 'دسترسی به این بخش برای مسئول پایه مجاز نیست.' };
+  }
+
+  // Research Manager
+  if (user.role === 'research_manager') {
+    if (STAFF_OPERATIONAL_COLLECTIONS.has(collection)) {
+      return { allowed: true };
+    }
+    return { allowed: false, reason: 'دسترسی به این بخش برای مسئول پژوهش مجاز نیست.' };
+  }
+
+  // Cultural Officer
+  if (user.role === 'cultural_officer') {
+    if (STAFF_OPERATIONAL_COLLECTIONS.has(collection)) {
+      return { allowed: true };
+    }
+    return { allowed: false, reason: 'دسترسی به این بخش برای مسئول فرهنگی و رفاهی مجاز نیست.' };
+  }
+
+  // General Level 2 Staff (custom level 2 with explicit edit/view bounds)
+  if (Number(user.level) === 2) {
+    if (STAFF_OPERATIONAL_COLLECTIONS.has(collection)) {
+      if ((action === 'write' || action === 'delete') && (user.isReadOnly === true || user.canEdit === false)) {
+        return { allowed: false, reason: 'حساب کاربری شما دارای دسترسی فقط‌مشاهده است.' };
+      }
+      return { allowed: true };
+    }
+    return { allowed: false, reason: 'دسترسی به این بخش برای این حساب کاربری مجاز نیست.' };
+  }
+
+  // Teacher
+  if (user.role === 'teacher') {
+    if (action === 'read') {
+      if (SHARED_SCHOOL_READ_COLLECTIONS.has(collection) || collection === 'teacher_transport_routines' || collection === 'teacher_transport_trips') {
+        return { allowed: true };
+      }
+      return { allowed: false, reason: 'استاد گرامی مجاز به مشاهده این بخش نیست.' };
+    }
+    if (action === 'write') {
+      const teacherWritable = new Set([
+        'attendance', 'counseling_session_grades', 'counseling_grades',
+        'personal_todos', 'user_todo_categories', 'assigned_todos',
+        'announcement_dismissals', 'db_save_errors'
+      ]);
+      if (teacherWritable.has(collection)) {
+        return { allowed: true };
+      }
+      return { allowed: false, reason: 'ثبت یا ویرایش این بخش برای نقش استاد مجاز نیست.' };
+    }
+    if (action === 'delete') {
+      const teacherDeletable = new Set([
+        'counseling_session_grades', 'counseling_grades', 'personal_todos', 'user_todo_categories'
+      ]);
+      if (teacherDeletable.has(collection)) {
+        return { allowed: true };
+      }
+      return { allowed: false, reason: 'حذف این بخش برای نقش استاد مجاز نیست.' };
+    }
+  }
+
+  // Class Representative (Level 3 Representative)
+  if (isClassRepresentativeUser(user)) {
+    if (action === 'read') {
+      if (SHARED_SCHOOL_READ_COLLECTIONS.has(collection)) {
+        return { allowed: true };
+      }
+      return { allowed: false, reason: 'نماینده کلاس مجاز به مشاهده این بخش نیست.' };
+    }
+    if (action === 'write') {
+      if (STUDENT_WRITABLE_COLLECTIONS.has(collection) || collection === 'attendance' || collection === 'representative_notes' || collection === 'students') {
+        if (collection !== 'attendance' && collection !== 'representative_notes' && collection !== 'students' && recordOwnerId) {
+          const candidates = getUserIdentityCandidates(user);
+          if (!candidates.includes(String(recordOwnerId).trim().toLowerCase())) {
+            return { allowed: false, reason: 'شما فقط مجاز به ثبت اطلاعات شخصی خود هستید.' };
+          }
+        }
+        return { allowed: true };
+      }
+      return { allowed: false, reason: 'ثبت یا تغییر این بخش برای نماینده کلاس مجاز نیست.' };
+    }
+    if (action === 'delete') {
+      if (STUDENT_DELETABLE_COLLECTIONS.has(collection) || collection === 'attendance' || collection === 'representative_notes') {
+        return { allowed: true };
+      }
+      return { allowed: false, reason: 'حذف در این بخش برای نماینده کلاس مجاز نیست.' };
+    }
+  }
+
+  // Regular Student (Level 3)
+  if (isStudentLevelUser(user)) {
+    if (action === 'read') {
+      if (SHARED_SCHOOL_READ_COLLECTIONS.has(collection)) {
+        return { allowed: true };
+      }
+      return { allowed: false, reason: 'طلبه گرامی مجاز به مشاهده این اطلاعات نیست.' };
+    }
+    if (action === 'write') {
+      if (STUDENT_WRITABLE_COLLECTIONS.has(collection)) {
+        if (recordOwnerId && collection !== 'attendance' && collection !== 'db_save_errors') {
+          const candidates = getUserIdentityCandidates(user);
+          if (!candidates.includes(String(recordOwnerId).trim().toLowerCase())) {
+            return { allowed: false, reason: 'شما فقط مجاز به ثبت یا ویرایش اطلاعات متعلق به خود هستید.' };
+          }
+        }
+        return { allowed: true };
+      }
+      return { allowed: false, reason: 'طلبه گرامی مجاز به ثبت یا تغییر اطلاعات در این بخش نیست.' };
+    }
+    if (action === 'delete') {
+      if (STUDENT_DELETABLE_COLLECTIONS.has(collection)) {
+        if (recordOwnerId) {
+          const candidates = getUserIdentityCandidates(user);
+          if (!candidates.includes(String(recordOwnerId).trim().toLowerCase())) {
+            return { allowed: false, reason: 'شما فقط مجاز به حذف رکوردهای شخصی خود هستید.' };
+          }
+        }
+        return { allowed: true };
+      }
+      return { allowed: false, reason: 'حذف این اطلاعات برای طلبه مجاز نیست.' };
+    }
+  }
+
+  // Fail-Closed default: deny any unrecognized role or collection action
+  return { allowed: false, reason: 'دسترسی به این بخش به صورت پیش‌فرض مسدود است (Fail-Closed).' };
 }
 
 function parseTimesFromData(data: any): { startTime: string | null; endTime: string | null } {
@@ -1275,27 +1637,38 @@ export function canUserReadDoc(user: any, collection: string, doc: any, context?
   }
 
   // 4. System Users collection
-  if (collection === 'system_users') {
-    return user.level === 1 || user.role === 'education_manager';
+  if (collection === 'system_users' || collection === 'all_users' || collection === 'users') {
+    const uName = String(user.username || '').toUpperCase();
+    return user.level === 1 || user.role === 'education_manager' || user.role === 'education_officer' || uName === 'SHAH' || uName === 'SADEGH';
   }
 
-  // 5. Personal Todos
-  if (collection === 'personal_todos') {
+  // 5. Personal Todos & Todo Categories
+  if (collection === 'personal_todos' || collection === 'user_todo_categories') {
     return doc.userId === user.id || doc.user_id === user.id;
   }
 
+  // 5b. Assigned Todos & Todos
+  if (collection === 'assigned_todos' || collection === 'todos') {
+    if (!isRegularStudentUser(user)) return true;
+    const candidates = getUserIdentityCandidates(user);
+    const todoOwners = [doc.recipientUserId, doc.senderUserId, doc.userId, doc.studentId]
+      .filter(Boolean)
+      .map((x: any) => String(x).trim().toLowerCase());
+    return todoOwners.some(id => candidates.includes(id));
+  }
+
   // 6. Counseling Session Grades
-  if (collection === 'counseling_session_grades') {
-    if (user.role === 'teacher' || user.level === 1 || user.role === 'super_admin' || user.role === 'education_manager' || user.role === 'education_officer' || user.role === 'research_manager') {
+  if (collection === 'counseling_session_grades' || collection === 'counseling_grades') {
+    if (user.role === 'teacher' || user.level === 1 || user.role === 'super_admin' || user.role === 'education_manager' || user.role === 'education_officer' || user.role === 'research_manager' || user.role === 'grade_mentor') {
       return true;
     }
-    if (user.role === 'student' || user.level === 3) {
-      const studentCandidates = [user.studentId, user.linkedStudentId, user.id, user.username, user.nationalId].filter(Boolean).map(x => String(x).toLowerCase().trim());
+    if (isStudentLevelUser(user)) {
+      const studentCandidates = getUserIdentityCandidates(user);
       const docCandidates = [doc.studentId, doc.student_id, doc.studentCode, doc.nationalId, doc.userId].filter(Boolean).map(x => String(x).toLowerCase().trim());
-      if (studentCandidates.length === 0 || docCandidates.length === 0) return true;
+      if (studentCandidates.length === 0 || docCandidates.length === 0) return false;
       return studentCandidates.some(sc => docCandidates.includes(sc));
     }
-    return true;
+    return Number(user.level) <= 2;
   }
 
   // 7. Student Requests (Students see their own requests; Officers & Admins see all/unit requests)
@@ -1303,20 +1676,21 @@ export function canUserReadDoc(user: any, collection: string, doc: any, context?
     if (user.level === 1 || user.role === 'super_admin' || user.role === 'school_manager' ||
         user.role === 'education_manager' || user.role === 'education_officer' ||
         user.role === 'finance_manager' || user.role === 'financial_officer' ||
-        user.role === 'cultural_officer' || user.role === 'grade_mentor') {
+        user.role === 'cultural_officer' || user.role === 'grade_mentor' ||
+        Number(user.level) <= 2) {
       return true;
     }
-    if (user.role === 'student' || user.level === 3) {
-      const uStudentId = String(user.studentId || user.linkedStudentId || user.id || '').trim();
-      const uUsername = String(user.username || '').trim().toUpperCase();
+    if (isStudentLevelUser(user)) {
+      const candidates = getUserIdentityCandidates(user);
       const uName = String(user.name || user.fullName || '').trim();
-      const docStudentId = String(doc.studentId || doc.student_id || '').trim();
-      const docNat = String(doc.nationalCode || doc.national_id || '').trim().toUpperCase();
+      const docStudentId = String(doc.studentId || doc.student_id || '').trim().toLowerCase();
+      const docNat = String(doc.nationalCode || doc.national_id || '').trim().toLowerCase();
       const docName = String(doc.studentName || doc.student_name || '').trim();
-      return (uStudentId && docStudentId === uStudentId) ||
-             (uUsername && (docNat === uUsername || docStudentId === uUsername)) ||
+      return (docStudentId && candidates.includes(docStudentId)) ||
+             (docNat && candidates.includes(docNat)) ||
              (uName && docName === uName);
     }
+    return false;
   }
 
   // 8. Announcement Dismissals: users only see their own dismissal records unless admin/education officer
@@ -1330,18 +1704,121 @@ export function canUserReadDoc(user: any, collection: string, doc: any, context?
       uName === 'SADEGH' ||
       uName === 'SHAH';
     if (isAdminOrEdu) return true;
-    const candidates = [user.id, user.studentId, user.linkedStudentId, user.username]
-      .filter(Boolean)
-      .map((x: any) => String(x).trim().toLowerCase());
+    const candidates = getUserIdentityCandidates(user);
     const docUser = String(doc.userId || '').trim().toLowerCase();
     const docStudent = String(doc.studentId || '').trim().toLowerCase();
     const docUname = String(doc.username || '').trim().toLowerCase();
-    return (docUser && candidates.includes(docUser)) ||
-           (docStudent && candidates.includes(docStudent)) ||
-           (docUname && candidates.includes(docUname));
+    return Boolean(
+      (docUser && candidates.includes(docUser)) ||
+      (docStudent && candidates.includes(docStudent)) ||
+      (docUname && candidates.includes(docUname))
+    );
   }
 
-  return true;
+  // 9. Attendance: Regular students can only read sessions containing their own record (and classmates' entries are stripped in query)
+  if (collection === 'attendance') {
+    if (
+      Number(user.level) <= 2 ||
+      user.role === 'teacher' ||
+      isClassRepresentativeUser(user) ||
+      context?.isRepresentative
+    ) {
+      return true;
+    }
+    if (isRegularStudentUser(user)) {
+      const candidates = context?.studentCandidates || getUserIdentityCandidates(user);
+      if (doc.studentId && candidates.includes(String(doc.studentId).trim().toLowerCase())) {
+        return true;
+      }
+      if (Array.isArray(doc.students)) {
+        return doc.students.some((st: any) => isMatchingStudentEntry(st, candidates, user));
+      }
+      return false;
+    }
+    return false;
+  }
+
+  // 10. Student-owned personal collections
+  const STUDENT_SCOPED_COLLECTIONS = new Set([
+    'course_selection_requests',
+    'student_meal_reservations', 'finance_student_meal_reservations',
+    'meal_reservations', 'lunch_reservations',
+    'custom_student_schedules',
+    'received_articles', 'evaluation_requests',
+    'student_course_progress', 'passed_courses',
+    'oral_exams', 'oral_exam_records',
+    'research', 'research_records', 'research_history', 'student_research_skills',
+    'student_comments', 'comments'
+  ]);
+  if (STUDENT_SCOPED_COLLECTIONS.has(collection)) {
+    if (Number(user.level) <= 2 || user.role === 'teacher') {
+      return true;
+    }
+    if (isStudentLevelUser(user)) {
+      const candidates = context?.studentCandidates || getUserIdentityCandidates(user);
+      const docOwnerIds = [
+        doc.studentId, doc.student_id, doc.userId, doc.user_id,
+        doc.nationalId, doc.nationalCode, doc.studentCode
+      ]
+        .filter(Boolean)
+        .map((x: any) => String(x).trim().toLowerCase());
+      if (docOwnerIds.some(oid => candidates.includes(oid))) return true;
+      const uName = String(user.name || user.fullName || '').trim().toLowerCase();
+      const dName = String(doc.studentName || doc.student_name || '').trim().toLowerCase();
+      return Boolean(docOwnerIds.length === 0 && uName && dName && uName === dName);
+    }
+    return false;
+  }
+
+  // 11. Student Lockers
+  if (collection === 'student_lockers' || collection === 'lockers' || collection === 'locker_history') {
+    if (Number(user.level) <= 2) return true;
+    if (isStudentLevelUser(user)) {
+      const candidates = context?.studentCandidates || getUserIdentityCandidates(user);
+      const sid = String(doc.studentId || doc.student_id || '').trim().toLowerCase();
+      return Boolean(sid && candidates.includes(sid));
+    }
+    return false;
+  }
+
+  // 12. Workflow items
+  if (collection === 'workflow_items' || collection === 'workflow') {
+    if (Number(user.level) <= 2) return true;
+    if (isStudentLevelUser(user)) {
+      const candidates = context?.studentCandidates || getUserIdentityCandidates(user);
+      const wfIds = [
+        doc.studentId, doc.userId, doc.requestedByUserId,
+        doc.details?.requestedByStudentId, doc.details?.studentId
+      ]
+        .filter(Boolean)
+        .map((x: any) => String(x).trim().toLowerCase());
+      return wfIds.some(id => candidates.includes(id));
+    }
+    return false;
+  }
+
+  // 13. Shared non-PII school metadata & calendars
+  if (SHARED_METADATA_READ_COLLECTIONS.has(collection)) {
+    return true;
+  }
+
+  // 14. Operational / Finance / Admin staff collections (only Level 1/2 staff)
+  if (STAFF_OPERATIONAL_COLLECTIONS.has(collection) || collection === 'audit_logs') {
+    return Number(user.level) <= 2;
+  }
+
+  // Fail-Closed default
+  return false;
+}
+
+function sanitizeAttendanceDocForUser(doc: any, user: any, candidates: string[]): any {
+  if (!doc || !Array.isArray(doc.students)) return doc;
+  if (!isRegularStudentUser(user)) return doc;
+  const ownStudents = doc.students.filter((st: any) => isMatchingStudentEntry(st, candidates, user));
+  return {
+    ...doc,
+    students: ownStudents
+  };
 }
 
 // Internal helper to retrieve multiple raw documents by collection and candidate IDs
@@ -1380,6 +1857,12 @@ async function fetchRawDocumentsByIds(collection: string, ids: string[]): Promis
   return [];
 }
 
+export async function getRawExistingDocById(collection: string, id: string): Promise<any | null> {
+  if (!id) return null;
+  const docs = await fetchRawDocumentsByIds(collection, [id]);
+  return docs && docs.length > 0 ? docs[0] : null;
+}
+
 // Server CRUD Handler: Get Single Document from Candidate IDs with Strict Role-Based Filtering
 export async function serverGetDocByCandidateIds(collection: string, candidateIds: string[], user?: any): Promise<any | null> {
   if (!candidateIds || candidateIds.length === 0) return null;
@@ -1404,7 +1887,14 @@ export async function serverGetDocByCandidateIds(collection: string, candidateId
   if (!docs || docs.length === 0) return null;
 
   // 4. Unified Security check: filter candidates using canUserReadDoc
-  const allowedDocs = docs.filter(doc => canUserReadDoc(user, collection, doc));
+  let context: any = {};
+  if (isRegularStudentUser(user)) {
+    const identity = await resolveAuthoritativeStudentIdentity(user);
+    context.studentCandidates = identity.candidates;
+  }
+  const allowedDocs = docs
+    .filter(doc => canUserReadDoc(user, collection, doc, context))
+    .map(doc => collection === 'attendance' ? sanitizeAttendanceDocForUser(doc, user, context.studentCandidates || getUserIdentityCandidates(user)) : doc);
   if (allowedDocs.length === 0) return null;
 
   // Requirement 4: "۴. اگر هر دو کلید log_ و studylog_ وجود داشتند، log_ را برگردان."
@@ -1423,6 +1913,12 @@ export async function serverQueryCollection(collection: string, user?: any): Pro
     if (PUBLIC_READ_COLLECTIONS.has(collection)) {
       return fetchRawCollectionData(collection);
     }
+    return [];
+  }
+
+  // 1b. Enforce collection-level read access
+  const authCheck = authorizeCollectionAccess(user, collection, 'read');
+  if (!authCheck.allowed) {
     return [];
   }
 
@@ -1627,8 +2123,18 @@ export async function serverQueryCollection(collection: string, user?: any): Pro
     }
   }
 
+  if (isStudentLevelUser(user) && collection !== 'students') {
+    const identity = await resolveAuthoritativeStudentIdentity(user);
+    context.studentCandidates = identity.candidates;
+  }
+
   // 5. Use the shared canUserReadDoc logic for absolute, bulletproof row-level filtering consistency
-  return rawItems.filter(item => canUserReadDoc(user, collection, item, context));
+  const filtered = rawItems.filter(item => canUserReadDoc(user, collection, item, context));
+  if (collection === 'attendance' && isRegularStudentUser(user)) {
+    const candidates = context.studentCandidates || getUserIdentityCandidates(user);
+    return filtered.map(doc => sanitizeAttendanceDocForUser(doc, user, candidates));
+  }
+  return filtered;
 }
 
 export async function fetchBootstrapData(callerUserOrLevel: any, userRole?: string): Promise<Record<string, any[]>> {

@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { serverQueryCollection, serverSaveDoc, authorizeCollectionAccess } from '../lib/serverDataApi';
+import {
+  serverQueryCollection,
+  serverSaveDoc,
+  authorizeCollectionAccess,
+  isRegularStudentUser,
+  resolveAuthoritativeStudentIdentity
+} from '../lib/serverDataApi';
 import { AppError } from '../lib/errorHandler';
 import { logServerAudit } from '../lib/serverAuth';
 import { logger } from '../lib/logger';
@@ -40,6 +46,9 @@ export class AttendanceService {
    * Record or update an attendance session log
    */
   public static async recordAttendanceSession(rawData: unknown, callerUser?: any): Promise<AttendanceSessionLog> {
+    if (isRegularStudentUser(callerUser)) {
+      throw new AppError('طلبه مجاز به ثبت جلسه حضور و غیاب کلاس نیست.', { statusCode: 403 });
+    }
     const authCheck = authorizeCollectionAccess(callerUser, 'attendance', 'write');
     if (!authCheck.allowed) {
       throw new AppError(authCheck.reason || 'شما مجوز ثبت حضور و غیاب را ندارید.', { statusCode: 403 });
@@ -117,6 +126,14 @@ export class AttendanceService {
    * Fetch attendance history for a single student across all sessions
    */
   public static async getAttendanceByStudent(studentId: string, callerUser?: any) {
+    let identity: Awaited<ReturnType<typeof resolveAuthoritativeStudentIdentity>> | null = null;
+    if (isRegularStudentUser(callerUser)) {
+      identity = await resolveAuthoritativeStudentIdentity(callerUser);
+      if (!identity.candidates.includes(String(studentId || '').trim().toLowerCase())) {
+        throw new AppError('شما تنها مجاز به مشاهده سوابق حضور و غیاب خود هستید.', { statusCode: 403 });
+      }
+    }
+
     const sessions = await this.getAllSessions(callerUser);
     const studentHistory: Array<{
       sessionId: string;
@@ -133,7 +150,14 @@ export class AttendanceService {
     }> = [];
 
     sessions.forEach(session => {
-      const studentRecord = session.students?.find(st => st.studentId === studentId);
+      const studentRecord = session.students?.find(st => {
+        if (identity) {
+          const stSid = String(st.studentId || '').trim().toLowerCase();
+          const stNat = String(st.nationalId || '').trim().toLowerCase();
+          return identity.candidates.includes(stSid) || (Boolean(stNat) && identity.candidates.includes(stNat));
+        }
+        return st.studentId === studentId;
+      });
       if (studentRecord) {
         studentHistory.push({
           sessionId: session.id,
@@ -179,6 +203,9 @@ export class AttendanceService {
     reason: string,
     callerUser?: any
   ): Promise<AttendanceSessionLog> {
+    if (isRegularStudentUser(callerUser)) {
+      throw new AppError('طلبه مجاز به موجه‌سازی غیبت نیست.', { statusCode: 403 });
+    }
     const authCheck = authorizeCollectionAccess(callerUser, 'attendance', 'write');
     if (!authCheck.allowed) {
       throw new AppError(authCheck.reason || 'شما مجوز موجه‌سازی غیبت را ندارید.', { statusCode: 403 });

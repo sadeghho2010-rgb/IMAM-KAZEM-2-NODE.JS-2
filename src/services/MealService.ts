@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import { serverQueryCollection, serverSaveDoc, authorizeCollectionAccess } from '../lib/serverDataApi';
+import {
+  serverQueryCollection,
+  serverSaveDoc,
+  authorizeCollectionAccess,
+  isStudentLevelUser,
+  resolveAuthoritativeStudentIdentity,
+  getRawExistingDocById
+} from '../lib/serverDataApi';
 import { AppError } from '../lib/errorHandler';
 import { logServerAudit } from '../lib/serverAuth';
 import { logger } from '../lib/logger';
@@ -92,9 +99,24 @@ export class MealService {
   }
 
   public static async getStudentReservations(studentId?: string, periodId?: string, callerUser?: any): Promise<StudentMealReservation[]> {
+    const authCheck = authorizeCollectionAccess(callerUser, 'student_meal_reservations', 'read');
+    if (!authCheck.allowed) {
+      throw new AppError(authCheck.reason || 'شما دسترسی به سوابق رزرو غذا را ندارید.', { statusCode: 403 });
+    }
+
     const items = await serverQueryCollection('student_meal_reservations', callerUser);
     let reservations = Array.isArray(items) ? (items as StudentMealReservation[]) : [];
-    if (studentId) reservations = reservations.filter(r => r.studentId === studentId);
+
+    if (isStudentLevelUser(callerUser)) {
+      const identity = await resolveAuthoritativeStudentIdentity(callerUser);
+      if (studentId && !identity.candidates.includes(String(studentId).trim().toLowerCase())) {
+        throw new AppError('شما تنها مجاز به مشاهده رزروهای غذای خود هستید.', { statusCode: 403 });
+      }
+      reservations = reservations.filter(r => identity.candidates.includes(String(r.studentId || '').trim().toLowerCase()));
+    } else if (studentId) {
+      reservations = reservations.filter(r => r.studentId === studentId);
+    }
+
     if (periodId) reservations = reservations.filter(r => r.periodId === periodId);
     return reservations;
   }
@@ -112,7 +134,26 @@ export class MealService {
     }
 
     const validData = parsed.data;
-    const id = validData.id || `res_${validData.periodId}_${validData.studentId}`;
+    const isStudent = isStudentLevelUser(callerUser);
+    const identity = isStudent ? await resolveAuthoritativeStudentIdentity(callerUser) : null;
+
+    const effectiveStudentId = isStudent && identity?.studentId ? identity.studentId : validData.studentId;
+    const effectiveStudentName = isStudent && identity?.studentName ? identity.studentName : validData.studentName.trim();
+
+    let id = validData.id || `res_${validData.periodId}_${effectiveStudentId}`;
+    if (isStudent && validData.id) {
+      const existing = await getRawExistingDocById('student_meal_reservations', validData.id);
+      if (existing && !identity!.candidates.includes(String(existing.studentId || '').trim().toLowerCase())) {
+        throw new AppError('شما مجاز به ویرایش رزرو غذای طلبه دیگر نیستید.', { statusCode: 403 });
+      }
+      if (!existing && validData.id.startsWith(`res_${validData.periodId}_`)) {
+        const suffix = validData.id.slice(`res_${validData.periodId}_`.length).trim().toLowerCase();
+        if (!identity!.candidates.includes(suffix)) {
+          id = `res_${validData.periodId}_${effectiveStudentId}`;
+        }
+      }
+    }
+
     const nowIso = new Date().toISOString();
 
     const lunchCount = validData.selectedLunchDays.length;
@@ -124,8 +165,8 @@ export class MealService {
     const record: StudentMealReservation = {
       id,
       periodId: validData.periodId,
-      studentId: validData.studentId,
-      studentName: validData.studentName.trim(),
+      studentId: effectiveStudentId,
+      studentName: effectiveStudentName,
       grade: validData.studentGrade,
       selectedLunchDays: validData.selectedLunchDays,
       selectedDinnerDays: validData.selectedDinnerDays,
@@ -156,6 +197,11 @@ export class MealService {
   }
 
   public static async getMealCancelledDays(callerUser?: any): Promise<MealCancelledDay[]> {
+    const authCheck = authorizeCollectionAccess(callerUser, 'meal_cancelled_days', 'read');
+    if (!authCheck.allowed) {
+      throw new AppError(authCheck.reason || 'شما دسترسی به روزهای تعطیلی غذا را ندارید.', { statusCode: 403 });
+    }
+
     const items = await serverQueryCollection('meal_cancelled_days', callerUser);
     return Array.isArray(items) ? (items as MealCancelledDay[]) : [];
   }
@@ -190,6 +236,9 @@ export class MealService {
   }
 
   public static async getDailyKitchenStats(date: string, callerUser?: any) {
+    if (!callerUser || isStudentLevelUser(callerUser)) {
+      throw new AppError('شما مجاز به مشاهده آمار کلی آشپزخانه نیستید.', { statusCode: 403 });
+    }
     const allReservations = await this.getStudentReservations(undefined, undefined, callerUser);
     const cancelledDays = await this.getMealCancelledDays(callerUser);
 

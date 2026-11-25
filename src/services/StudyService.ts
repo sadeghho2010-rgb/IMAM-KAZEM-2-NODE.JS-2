@@ -1,5 +1,13 @@
 import { z } from 'zod';
-import { serverQueryCollection, serverGetDocByCandidateIds, serverSaveDoc, authorizeCollectionAccess } from '../lib/serverDataApi';
+import {
+  serverQueryCollection,
+  serverGetDocByCandidateIds,
+  serverSaveDoc,
+  authorizeCollectionAccess,
+  isStudentLevelUser,
+  resolveAuthoritativeStudentIdentity,
+  getRawExistingDocById
+} from '../lib/serverDataApi';
 import { AppError } from '../lib/errorHandler';
 import { logServerAudit } from '../lib/serverAuth';
 import { logger } from '../lib/logger';
@@ -127,19 +135,41 @@ export class StudyService {
     }
 
     const valid = parsed.data;
-    const id = valid.id || `log_${valid.periodId}_${valid.studentId}`;
+    const isStudent = isStudentLevelUser(callerUser);
+    const identity = isStudent ? await resolveAuthoritativeStudentIdentity(callerUser) : null;
+
+    const effectiveStudentId = isStudent && identity?.studentId ? identity.studentId : valid.studentId;
+    let id = valid.id || `log_${valid.periodId}_${effectiveStudentId}`;
+
+    let existingLog: any = null;
+    if (isStudent && valid.id) {
+      existingLog = await getRawExistingDocById('periodic_study_logs', valid.id);
+      if (existingLog && !identity!.candidates.includes(String(existingLog.studentId || '').trim().toLowerCase())) {
+        throw new AppError('شما مجاز به ویرایش گزارش مطالعه طلبه دیگر نیستید.', { statusCode: 403 });
+      }
+      if (!existingLog && (valid.id.startsWith(`log_${valid.periodId}_`) || valid.id.startsWith(`studylog_${valid.periodId}_`))) {
+        const prefix = valid.id.startsWith(`studylog_${valid.periodId}_`)
+          ? `studylog_${valid.periodId}_`
+          : `log_${valid.periodId}_`;
+        const suffix = valid.id.slice(prefix.length).trim().toLowerCase();
+        if (!identity!.candidates.includes(suffix)) {
+          id = `log_${valid.periodId}_${effectiveStudentId}`;
+        }
+      }
+    }
+
     const nowIso = new Date().toISOString();
 
     const logRecord: PeriodicStudyLog = {
       id,
       periodId: valid.periodId,
-      studentId: valid.studentId,
+      studentId: effectiveStudentId,
       hours: valid.hours,
       studyHours: valid.studyHours || valid.hours,
       discussionHours: valid.discussionHours || 0,
-      isExempt: valid.isExempt,
-      exemptionReason: valid.exemptionReason,
-      submittedBy: callerUser?.role === 'student' ? 'student' : 'officer',
+      isExempt: isStudent ? existingLog?.isExempt : valid.isExempt,
+      exemptionReason: isStudent ? existingLog?.exemptionReason : valid.exemptionReason,
+      submittedBy: isStudent ? 'student' : 'officer',
       lastModifiedAt: nowIso
     };
 
@@ -162,26 +192,39 @@ export class StudyService {
    * Fetch study stats and evaluation for a specific student in a period
    */
   public static async getStudentStudyStats(studentId: string, periodId: string, callerUser?: any) {
+    const authCheck = authorizeCollectionAccess(callerUser, 'periodic_study_logs', 'read');
+    if (!authCheck.allowed) {
+      throw new AppError(authCheck.reason || 'شما دسترسی به آمار مطالعه را ندارید.', { statusCode: 403 });
+    }
+
     // ۱. بررسی دسترسی سطح ردیف: اگر فراخوان‌کننده طلبه باشد، فقط مجاز به دریافت کارنامه خودش است
-    if (callerUser && (callerUser.role === 'student' || callerUser.level === 3)) {
-      const uStudentId = String(callerUser.studentId || callerUser.linkedStudentId || callerUser.id || '').trim();
-      if (uStudentId && studentId !== uStudentId) {
+    let identity: Awaited<ReturnType<typeof resolveAuthoritativeStudentIdentity>> | null = null;
+    if (isStudentLevelUser(callerUser)) {
+      identity = await resolveAuthoritativeStudentIdentity(callerUser);
+      if (!identity.candidates.includes(String(studentId || '').trim().toLowerCase())) {
         throw new AppError('شما تنها مجاز به مشاهده آمار مطالعه خود هستید.', { statusCode: 403 });
       }
     }
 
     const period = await this.getStudyPeriodById(periodId, callerUser);
     
-    // ۲. خواندن مستقیم دو کلید ممکن با یک کوئری سریع IN ('log_{periodId}_{studentId}', 'studylog_{periodId}_{studentId}')
-    const candidateIds = [
+    // ۲. خواندن مستقیم کلیدهای ممکن با یک کوئری سریع
+    const candidateIds = Array.from(new Set([
       `log_${periodId}_${studentId}`,
-      `studylog_${periodId}_${studentId}`
-    ];
+      `studylog_${periodId}_${studentId}`,
+      ...(identity?.studentId ? [`log_${periodId}_${identity.studentId}`, `studylog_${periodId}_${identity.studentId}`] : [])
+    ]));
     let studentLog = await serverGetDocByCandidateIds('periodic_study_logs', candidateIds, callerUser);
 
-    // ۳. بررسی انطباق فیلدهای periodId و studentId با ورودی تابع
-    if (studentLog && (studentLog.periodId !== periodId || studentLog.studentId !== studentId)) {
-      studentLog = null;
+    // ۳. بررسی انطباق فیلدهای periodId و studentId با ورودی تابع یا شناسه‌های معتبر طلبه
+    if (studentLog) {
+      const logSid = String(studentLog.studentId || '').trim().toLowerCase();
+      const matchesStudent = identity
+        ? identity.candidates.includes(logSid)
+        : studentLog.studentId === studentId;
+      if (studentLog.periodId !== periodId || !matchesStudent) {
+        studentLog = null;
+      }
     }
 
     // اگر رکوردی با دو کلید ممکن پیدا نشد، بدون بارگذاری کل کالکشن، همان null فرض می‌شود

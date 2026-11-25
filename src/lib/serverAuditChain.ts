@@ -4,9 +4,8 @@ import { HashChainedAuditLog } from '../types';
 const PEPPER = process.env.AUDIT_PEPPER || process.env.AUDITPEPPER || 'Ap9bQ2cR5dT8eW1fY4hK7jM0nP3sV6xZ_fallback_audit_pepper';
 
 if (!PEPPER || PEPPER.length < 24) {
-  console.warn('WARN: AUDIT_PEPPER is too short or missing. Using resilient default pepper.');
+  console.warn('WARN: AUDIT_PEPPER (or AUDITPEPPER) is too short (< 24 chars) or missing.');
 }
-const SAFE_PEPPER = PEPPER || 'fallback_for_dev_only_very_long_string_1234567890';
 const GENESIS_HASH = '0000000000000000000000000000000000000000000000000000000000000000';
 
 /**

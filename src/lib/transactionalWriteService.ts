@@ -7,6 +7,53 @@ export const globalEventBus = new EventEmitter();
 export type EntityName = 'students' | 'teachers' | 'classes' | 'enrollments' | 'users' | 'roles_permissions';
 export type MutationOp = 'CREATE' | 'UPDATE' | 'DELETE';
 
+const SAFE_COLUMN_NAME_REGEX = /^[a-zA-Z0-9_]+$/;
+
+const ALLOWED_COLUMNS_BY_ENTITY: Record<EntityName, ReadonlySet<string>> = {
+  students: new Set([
+    'student_code', 'national_id', 'national_id_enc', 'name', 'father_name',
+    'grade', 'phone', 'phone_enc', 'address', 'status', 'is_active',
+    'entry_year', 'mentor_id', 'notes', 'data', 'deleted_at'
+  ]),
+  teachers: new Set([
+    'name', 'specialty', 'phone', 'phone_enc', 'email', 'is_active', 'data', 'deleted_at'
+  ]),
+  classes: new Set([
+    'title', 'grade', 'capacity', 'location', 'teacher_id', 'program_id', 'data', 'deleted_at'
+  ]),
+  enrollments: new Set([
+    'student_id', 'program_id', 'grade', 'status', 'data', 'deleted_at'
+  ]),
+  users: new Set([
+    'username', 'password_hash', 'name', 'role', 'role_title', 'avatar_url',
+    'level', 'grade_label', 'mentor_id', 'student_id', 'linked_student_id',
+    'teacher_id', 'avatar_bg', 'allowed_tabs', 'editable_tabs', 'module_permissions',
+    'is_active', 'is_read_only', 'can_edit', 'must_change_password',
+    'failed_login_attempts', 'account_locked_until', 'last_login',
+    'phone_enc', 'national_id_enc', 'data', 'deleted_at'
+  ]),
+  roles_permissions: new Set([
+    'role', 'role_name', 'permissions', 'allowed_tabs', 'editable_tabs',
+    'module_permissions', 'description', 'data', 'deleted_at'
+  ])
+};
+
+function validatePayloadColumns(entity: EntityName, payload: Record<string, any>): string | null {
+  const allowedCols = ALLOWED_COLUMNS_BY_ENTITY[entity];
+  if (!allowedCols) {
+    return `موجودیت نامعتبر است: ${String(entity)}`;
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return 'ساختار payload نامعتبر است.';
+  }
+  for (const key of Object.keys(payload)) {
+    if (!SAFE_COLUMN_NAME_REGEX.test(key) || !allowedCols.has(key)) {
+      return `نام فیلد یا ستون «${key}» برای جدول «${entity}» مجاز نیست.`;
+    }
+  }
+  return null;
+}
+
 export interface WriteRequest {
   entity: EntityName;
   entityId: string; // UUID string
@@ -121,6 +168,12 @@ export class TransactionalWriteService {
       let oldServerValues: Record<string, any> | null = null;
 
       if (req.op === 'CREATE') {
+        const colError = validatePayloadColumns(req.entity, req.payload);
+        if (colError) {
+          await conn.rollback();
+          return { success: false, code: 400, error: colError };
+        }
+
         const fields = ['id', 'version', 'created_at', 'updated_at', 'updated_by'];
         const valuesPlaceholder = ['?', '?', 'NOW(3)', 'NOW(3)', '?'];
         const params: any[] = [entityIdBin, 1, actorIdBin];
@@ -136,6 +189,12 @@ export class TransactionalWriteService {
         newVersion = 1;
 
       } else if (req.op === 'UPDATE') {
+        const colError = validatePayloadColumns(req.entity, req.payload);
+        if (colError) {
+          await conn.rollback();
+          return { success: false, code: 400, error: colError };
+        }
+
         const [currentRows]: any = await conn.execute(
           `SELECT * FROM \`${req.entity}\` WHERE id = ? AND deleted_at IS NULL`,
           [entityIdBin]

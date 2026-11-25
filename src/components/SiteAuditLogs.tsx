@@ -713,8 +713,18 @@ export default function SiteAuditLogs() {
   const handleVerifyHashChain = async () => {
     setIsVerifyingChain(true);
     try {
+      const token =
+        localStorage.getItem('auth_token') ||
+        sessionStorage.getItem('auth_token') ||
+        localStorage.getItem('access_token') ||
+        sessionStorage.getItem('access_token') ||
+        localStorage.getItem('token') ||
+        sessionStorage.getItem('token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       const res = await fetch('/api/audit-logs/verify-chain', {
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         credentials: 'include'
       });
       const data = await res.json();

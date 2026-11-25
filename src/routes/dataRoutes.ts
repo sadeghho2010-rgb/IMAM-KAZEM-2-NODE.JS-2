@@ -7,7 +7,12 @@ import {
   serverDeleteDoc,
   serverGetDocByCandidateIds,
   authorizeCollectionAccess,
-  fetchBootstrapData
+  fetchBootstrapData,
+  getRawExistingDocById,
+  canUserReadDoc,
+  isStudentLevelUser,
+  isClassRepresentativeUser,
+  resolveAuthoritativeStudentIdentity
 } from '../lib/serverDataApi';
 import { verifyAccessToken, logServerAudit, fetchAllUsersFromStorage } from '../lib/serverAuth';
 import { MysqlRepository } from '../lib/databaseAbstraction';
@@ -76,6 +81,187 @@ const getClientIp = (req: Request): string => {
   }
   return req.socket.remoteAddress || '127.0.0.1';
 };
+
+const STUDENT_SELF_ONLY_COLLECTIONS = new Set([
+  'student_requests',
+  'study_daily_entries',
+  'periodic_study_logs',
+  'course_selection_requests',
+  'student_meal_reservations',
+  'finance_student_meal_reservations',
+  'meal_reservations',
+  'lunch_reservations',
+  'received_articles',
+  'evaluation_requests',
+  'custom_student_schedules',
+  'personal_todos',
+  'user_todo_categories',
+  'assigned_todos',
+  'workflow_items',
+  'announcement_dismissals'
+]);
+
+async function enforceStudentMutationSecurity(
+  collection: string,
+  rawData: any,
+  callerUser: any,
+  isDelete = false,
+  explicitId?: string
+): Promise<{ allowed: boolean; status?: number; reason?: string; data?: any }> {
+  if (!callerUser || !isStudentLevelUser(callerUser)) {
+    return { allowed: true, data: rawData };
+  }
+
+  const isRep = isClassRepresentativeUser(callerUser);
+  // Class representatives have delegated write/delete on attendance, representative_notes, and students
+  if (isRep && (collection === 'attendance' || collection === 'representative_notes' || collection === 'students')) {
+    return { allowed: true, data: rawData };
+  }
+
+  const identity = await resolveAuthoritativeStudentIdentity(callerUser);
+  const targetId = String(explicitId || rawData?.id || '').trim();
+  const existingDoc = targetId ? await getRawExistingDocById(collection, targetId) : null;
+
+  // Ownership check on existing documents before update or delete
+  if (existingDoc) {
+    if (collection === 'attendance') {
+      // Self-reporting students may only update their own entry inside a self_reporting session
+    } else if (!canUserReadDoc(callerUser, collection, existingDoc, { studentCandidates: identity.candidates })) {
+      return {
+        allowed: false,
+        status: 403,
+        reason: 'شما مجاز به ویرایش یا حذف رکورد متعلق به طلبه دیگری نیستید.'
+      };
+    }
+  }
+
+  if (isDelete) {
+    return { allowed: true, data: rawData };
+  }
+
+  const sanitized = { ...(rawData || {}) };
+
+  if (collection === 'attendance') {
+    // Only regular students in self-reporting courses may submit their own attendance
+    const programId = String(sanitized.programId || sanitized.program_id || existingDoc?.programId || '').trim();
+    const programDoc = programId ? await getRawExistingDocById('programs', programId) : null;
+    if (!programDoc || programDoc.attendanceType !== 'self_reporting') {
+      return {
+        allowed: false,
+        status: 403,
+        reason: 'ثبت حضور و غیاب برای این درس فقط توسط استاد، نماینده کلاس یا آموزش مجاز است.'
+      };
+    }
+
+    const incomingStudents = Array.isArray(sanitized.students) ? sanitized.students : [];
+    const myEntry = incomingStudents[0] && typeof incomingStudents[0] === 'object' ? { ...incomingStudents[0] } : {};
+    myEntry.studentId = identity.studentId;
+    myEntry.studentName = identity.studentName;
+    if (identity.nationalCode) myEntry.nationalId = identity.nationalCode;
+    myEntry.recordedMethod = 'self_reporting';
+
+    sanitized.students = [myEntry];
+    sanitized.isCancelled = existingDoc ? Boolean(existingDoc.isCancelled) : false;
+    if (existingDoc?.cancellationReason) {
+      sanitized.cancellationReason = existingDoc.cancellationReason;
+    } else {
+      delete sanitized.cancellationReason;
+    }
+    return { allowed: true, data: sanitized };
+  }
+
+  if (!STUDENT_SELF_ONLY_COLLECTIONS.has(collection)) {
+    return { allowed: true, data: sanitized };
+  }
+
+  if (collection === 'personal_todos' || collection === 'user_todo_categories' || collection === 'announcement_dismissals') {
+    sanitized.userId = identity.userId;
+    if (sanitized.user_id !== undefined) sanitized.user_id = identity.userId;
+    return { allowed: true, data: sanitized };
+  }
+
+  if (collection === 'assigned_todos') {
+    // Students can only update read/completion state of tasks assigned to them
+    if (!existingDoc) {
+      return { allowed: false, status: 403, reason: 'طلبه مجاز به ایجاد ارجاع کار جدید نیست.' };
+    }
+    return { allowed: true, data: sanitized };
+  }
+
+  if (collection === 'workflow_items') {
+    sanitized.studentId = identity.studentId;
+    sanitized.userId = identity.userId;
+    if (sanitized.details && typeof sanitized.details === 'object') {
+      sanitized.details = {
+        ...sanitized.details,
+        requestedByStudentId: identity.studentId,
+        studentId: identity.studentId
+      };
+    }
+    if (!existingDoc) {
+      sanitized.status = 'pending';
+    } else {
+      sanitized.status = existingDoc.status;
+    }
+    return { allowed: true, data: sanitized };
+  }
+
+  // Student-owned collections: forcibly override identity fields from server-verified caller profile
+  sanitized.studentId = identity.studentId;
+  sanitized.studentName = identity.studentName;
+  sanitized.userId = identity.userId;
+  if ('nationalCode' in sanitized || collection === 'student_requests') {
+    sanitized.nationalCode = identity.nationalCode;
+  }
+  if ('nationalId' in sanitized) {
+    sanitized.nationalId = identity.nationalCode;
+  }
+
+  if (collection === 'student_requests') {
+    if (!existingDoc) {
+      sanitized.status = 'pending';
+      sanitized.isTerminated = false;
+      delete sanitized.officialReply;
+      delete sanitized.repliedBy;
+      delete sanitized.repliedByName;
+      delete sanitized.repliedAt;
+      delete sanitized.rejectionReason;
+    } else {
+      // Preserve officer-controlled resolution fields; allow student follow-up messages / isReadByStudent
+      sanitized.officialReply = existingDoc.officialReply;
+      sanitized.repliedBy = existingDoc.repliedBy;
+      sanitized.repliedByName = existingDoc.repliedByName;
+      sanitized.repliedAt = existingDoc.repliedAt;
+      sanitized.rejectionReason = existingDoc.rejectionReason;
+      sanitized.isTerminated = existingDoc.isTerminated;
+      sanitized.terminatedAt = existingDoc.terminatedAt;
+      sanitized.terminatedBy = existingDoc.terminatedBy;
+      if (existingDoc.leaveDetails) {
+        sanitized.leaveDetails = existingDoc.leaveDetails;
+      }
+      if (sanitized.status === 'resolved' || sanitized.status === 'rejected') {
+        sanitized.status = existingDoc.status || 'pending';
+      }
+    }
+  } else if (collection === 'periodic_study_logs') {
+    sanitized.submittedBy = 'student';
+    if (existingDoc) {
+      sanitized.isExempt = existingDoc.isExempt;
+      sanitized.exemptionReason = existingDoc.exemptionReason;
+    } else {
+      delete sanitized.isExempt;
+      delete sanitized.exemptionReason;
+    }
+  } else if (collection === 'course_selection_requests') {
+    if (!existingDoc) {
+      sanitized.status = 'pending';
+    } else if (sanitized.status === 'approved' || sanitized.status === 'rejected') {
+      sanitized.status = existingDoc.status || 'pending';
+    }
+  }
+
+  return { allowed: true, data: sanitized };
+}
 
 // GET /api/data/bootstrap - Batch fetch all collections in 1 optimized request
 router.get('/data/bootstrap', async (req: Request, res: Response) => {
@@ -153,14 +339,25 @@ router.get('/database/snapshot', async (req: Request, res: Response) => {
 // GET /api/database/full-system-export - JSON payload for client integration
 router.get('/database/full-system-export', async (req: Request, res: Response) => {
   const token = extractToken(req);
-  let operatorName = 'operator';
-  if (token) {
-    const verification = verifyAccessToken(token);
-    if (verification.valid && verification.decoded) {
-      operatorName = verification.decoded.username || 'operator';
-    }
+  if (!token) {
+    return res.status(401).json({ success: false, message: 'احراز هویت الزامی است.' });
   }
 
+  const verification = verifyAccessToken(token);
+  if (!verification.valid || !verification.decoded) {
+    return res.status(401).json({ success: false, message: 'نشست شما معتبر نیست یا منقضی شده است.' });
+  }
+
+  const callerUser = await getEnrichedCallerUser(verification.decoded);
+  const { isAuthorizedForMonitoring } = await import('../config/monitoringAccess');
+  if (!isAuthorizedForMonitoring(callerUser)) {
+    return res.status(403).json({
+      success: false,
+      message: 'فقط مدیران مجاز سامانه (مدیر ارشد، مسئول آموزش، مسئول مالی) مجاز به دریافت خروجی کامل سیستم هستند.'
+    });
+  }
+
+  const operatorName = callerUser?.username || 'operator';
   const { createFullDatabaseSnapshot } = await import('../lib/serverBackupEngine');
   try {
     const snapshot = await createFullDatabaseSnapshot(operatorName, false);
@@ -200,6 +397,25 @@ router.post('/database/restore-snapshot', async (req: Request, res: Response) =>
 
 // GET /api/database/scheduled-backups
 router.get('/database/scheduled-backups', async (req: Request, res: Response) => {
+  const token = extractToken(req);
+  if (!token) {
+    return res.status(401).json({ success: false, message: 'احراز هویت الزامی است.' });
+  }
+
+  const verification = verifyAccessToken(token);
+  if (!verification.valid || !verification.decoded) {
+    return res.status(401).json({ success: false, message: 'نشست شما معتبر نیست یا منقضی شده است.' });
+  }
+
+  const callerUser = await getEnrichedCallerUser(verification.decoded);
+  const { isAuthorizedForMonitoring } = await import('../config/monitoringAccess');
+  if (!isAuthorizedForMonitoring(callerUser)) {
+    return res.status(403).json({
+      success: false,
+      message: 'فقط مدیران مجاز سامانه مجاز به مشاهده فهرست نسخه‌های پشتیبان هستند.'
+    });
+  }
+
   const { listOnDiskBackups } = await import('../lib/serverBackupEngine');
   const backups = listOnDiskBackups();
   return res.json({ success: true, backups });
@@ -248,9 +464,25 @@ router.post('/database/scheduled-backups/run-now', async (req: Request, res: Res
 // ===================== AUDIT LOG HASH CHAIN VERIFICATION =====================
 
 router.get('/audit-logs/verify-chain', async (req: Request, res: Response) => {
+  const token = extractToken(req);
+  if (!token) {
+    return res.status(401).json({ success: false, message: 'احراز هویت الزامی است.' });
+  }
+
+  const verification = verifyAccessToken(token);
+  if (!verification.valid || !verification.decoded) {
+    return res.status(401).json({ success: false, message: 'نشست شما معتبر نیست یا منقضی شده است.' });
+  }
+
+  const callerUser = await getEnrichedCallerUser(verification.decoded);
+  const authCheck = authorizeCollectionAccess(callerUser, 'audit_logs', 'read');
+  if (!authCheck.allowed) {
+    return res.status(403).json({ success: false, message: authCheck.reason || 'دسترسی غیرمجاز به اعتبارسنجی لاگ‌های امنیتی.' });
+  }
+
   try {
     const { verifyAuditChain } = await import('../lib/serverAuditChain');
-    const logs = await serverQueryCollection('audit_logs');
+    const logs = await serverQueryCollection('audit_logs', callerUser);
     const result = verifyAuditChain(Array.isArray(logs) ? logs : []);
     return res.json({ success: true, ...result });
   } catch (err: unknown) {
@@ -386,8 +618,14 @@ router.post('/data/:collection', async (req: Request, res: Response) => {
     return res.status(403).json({ success: false, message: authCheck.reason || 'دسترسی غیرمجاز' });
   }
 
+  const studentCheck = await enforceStudentMutationSecurity(collection, data, callerUser, false);
+  if (!studentCheck.allowed) {
+    return res.status(studentCheck.status || 403).json({ success: false, message: studentCheck.reason || 'دسترسی غیرمجاز' });
+  }
+  const safeData = studentCheck.data;
+
   try {
-    const saveRes = await serverSaveDoc(collection, data, callerUser);
+    const saveRes = await serverSaveDoc(collection, safeData, callerUser);
     if (!saveRes.success) {
       const statusCode = saveRes.notFound ? 404 : 500;
       return res.status(statusCode).json({ success: false, message: saveRes.error || 'خطا در ذخیره‌سازی داده' });
@@ -396,7 +634,7 @@ router.post('/data/:collection', async (req: Request, res: Response) => {
     const resPayload = { 
       success: true, 
       id: saveRes.id, 
-      item: saveRes.item || data, 
+      item: saveRes.item || safeData, 
       affectedRows: saveRes.affectedRows ?? 1,
       changedRows: saveRes.changedRows ?? 1,
       timestamp: Date.now() 
@@ -437,8 +675,14 @@ router.put('/data/:collection/:id', async (req: Request, res: Response) => {
     return res.status(403).json({ success: false, message: authCheck.reason || 'دسترسی غیرمجاز' });
   }
 
+  const studentCheck = await enforceStudentMutationSecurity(collection, data, callerUser, false, id);
+  if (!studentCheck.allowed) {
+    return res.status(studentCheck.status || 403).json({ success: false, message: studentCheck.reason || 'دسترسی غیرمجاز' });
+  }
+  const safeData = studentCheck.data;
+
   try {
-    const saveRes = await serverSaveDoc(collection, data, callerUser);
+    const saveRes = await serverSaveDoc(collection, safeData, callerUser);
     
     // Explicit logging of affectedRows and changedRows as requested
     logger.info(`[PUT Edit] Collection: "${collection}", ID: "${id}", affectedRows: ${saveRes.affectedRows ?? 1}, changedRows: ${saveRes.changedRows ?? 1}`);
@@ -451,7 +695,7 @@ router.put('/data/:collection/:id', async (req: Request, res: Response) => {
     const resPayload = { 
       success: true, 
       id: saveRes.id, 
-      item: saveRes.item || data, 
+      item: saveRes.item || safeData, 
       affectedRows: saveRes.affectedRows ?? 1,
       changedRows: saveRes.changedRows ?? 1,
       timestamp: Date.now() 
@@ -483,6 +727,11 @@ router.delete('/data/:collection/:id', async (req: Request, res: Response) => {
   const authCheck = authorizeCollectionAccess(callerUser, collection, 'delete');
   if (!authCheck.allowed) {
     return res.status(403).json({ success: false, message: authCheck.reason || 'دسترسی غیرمجاز' });
+  }
+
+  const studentCheck = await enforceStudentMutationSecurity(collection, { id }, callerUser, true, id);
+  if (!studentCheck.allowed) {
+    return res.status(studentCheck.status || 403).json({ success: false, message: studentCheck.reason || 'دسترسی غیرمجاز' });
   }
 
   try {
@@ -522,10 +771,24 @@ router.post('/data/:collection/batch', async (req: Request, res: Response) => {
   }
 
   try {
+    const safeItems: any[] = [];
     for (const item of items) {
-      await serverSaveDoc(collection, item, callerUser);
+      const itemOwnerId = item?.userId || item?.studentId;
+      const itemAuth = authorizeCollectionAccess(callerUser, collection, 'write', itemOwnerId);
+      if (!itemAuth.allowed) {
+        return res.status(403).json({ success: false, message: itemAuth.reason || 'دسترسی غیرمجاز' });
+      }
+      const studentCheck = await enforceStudentMutationSecurity(collection, item, callerUser, false);
+      if (!studentCheck.allowed) {
+        return res.status(studentCheck.status || 403).json({ success: false, message: studentCheck.reason || 'دسترسی غیرمجاز' });
+      }
+      safeItems.push(studentCheck.data);
     }
-    return res.json({ success: true, count: items.length });
+
+    for (const safeItem of safeItems) {
+      await serverSaveDoc(collection, safeItem, callerUser);
+    }
+    return res.json({ success: true, count: safeItems.length });
   } catch (err) {
     logger.error(`Error batch saving ${collection}:`, err);
     return res.status(500).json({ success: false, message: 'خطا در ذخیره دسته‌ای اطلاعات.' });
@@ -627,8 +890,25 @@ router.post('/bug-reports', async (req: Request, res: Response) => {
 });
 
 router.get('/bug-reports', async (req: Request, res: Response) => {
+  const token = extractToken(req);
+  if (!token) {
+    return res.status(401).json({ success: false, message: 'احراز هویت الزامی است.' });
+  }
+
+  const verification = verifyAccessToken(token);
+  if (!verification.valid || !verification.decoded) {
+    return res.status(401).json({ success: false, message: 'نشست شما معتبر نیست یا منقضی شده است.' });
+  }
+
+  const callerUser = await getEnrichedCallerUser(verification.decoded);
+  const { isAuthorizedForMonitoring } = await import('../config/monitoringAccess');
+  const lvl = Number(callerUser?.level);
+  if (!isAuthorizedForMonitoring(callerUser) && lvl !== 1 && lvl !== 2) {
+    return res.status(403).json({ success: false, message: 'مشاهده گزارش‌های خطا فقط برای مدیران سامانه مجاز است.' });
+  }
+
   try {
-    const items = await serverQueryCollection('bug_reports');
+    const items = await serverQueryCollection('bug_reports', callerUser);
     return res.json({ success: true, items });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : 'خطا در دریافت گزارش‌ها';

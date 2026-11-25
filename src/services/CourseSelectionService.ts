@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import { serverQueryCollection, serverSaveDoc, authorizeCollectionAccess } from '../lib/serverDataApi';
+import {
+  serverQueryCollection,
+  serverSaveDoc,
+  authorizeCollectionAccess,
+  isStudentLevelUser,
+  resolveAuthoritativeStudentIdentity,
+  getRawExistingDocById
+} from '../lib/serverDataApi';
 import { AppError } from '../lib/errorHandler';
 import { logServerAudit } from '../lib/serverAuth';
 import { logger } from '../lib/logger';
@@ -89,13 +96,31 @@ export class CourseSelectionService {
   }
 
   public static async getAllRequests(periodId?: string, callerUser?: any): Promise<CourseSelectionRequest[]> {
+    const authCheck = authorizeCollectionAccess(callerUser, 'course_selection_requests', 'read');
+    if (!authCheck.allowed) {
+      throw new AppError(authCheck.reason || 'شما دسترسی به درخواست‌های انتخاب واحد را ندارید.', { statusCode: 403 });
+    }
+
     const items = await serverQueryCollection('course_selection_requests', callerUser);
     let requests = Array.isArray(items) ? (items as CourseSelectionRequest[]) : [];
+    if (isStudentLevelUser(callerUser)) {
+      const identity = await resolveAuthoritativeStudentIdentity(callerUser);
+      requests = requests.filter(r => identity.candidates.includes(String(r.studentId || '').trim().toLowerCase()));
+    }
     if (periodId) requests = requests.filter(r => r.periodId === periodId);
     return requests;
   }
 
   public static async getRequestByStudent(studentId: string, periodId?: string, callerUser?: any): Promise<CourseSelectionRequest | null> {
+    if (isStudentLevelUser(callerUser)) {
+      const identity = await resolveAuthoritativeStudentIdentity(callerUser);
+      if (studentId && !identity.candidates.includes(String(studentId).trim().toLowerCase())) {
+        throw new AppError('شما تنها مجاز به مشاهده انتخاب واحد خود هستید.', { statusCode: 403 });
+      }
+      const requests = await this.getAllRequests(periodId, callerUser);
+      return requests.find(r => identity.candidates.includes(String(r.studentId || '').trim().toLowerCase())) || null;
+    }
+
     const requests = await this.getAllRequests(periodId, callerUser);
     return requests.find(r => r.studentId === studentId) || null;
   }
@@ -113,17 +138,37 @@ export class CourseSelectionService {
     }
 
     const valid = parsed.data;
-    const id = valid.id || `cs_req_${valid.periodId}_${valid.studentId}`;
+    const isStudent = isStudentLevelUser(callerUser);
+    const identity = isStudent ? await resolveAuthoritativeStudentIdentity(callerUser) : null;
+
+    const effectiveStudentId = isStudent && identity?.studentId ? identity.studentId : valid.studentId;
+    const effectiveStudentName = isStudent && identity?.studentName ? identity.studentName : valid.studentName.trim();
+    const effectiveNationalId = isStudent && identity?.nationalCode ? identity.nationalCode : valid.nationalId;
+
+    let id = valid.id || `cs_req_${valid.periodId}_${effectiveStudentId}`;
+    if (isStudent && valid.id) {
+      const existing = await getRawExistingDocById('course_selection_requests', valid.id);
+      if (existing && !identity!.candidates.includes(String(existing.studentId || '').trim().toLowerCase())) {
+        throw new AppError('شما مجاز به تغییر فرم انتخاب واحد طلبه دیگر نیستید.', { statusCode: 403 });
+      }
+      if (!existing && valid.id.startsWith(`cs_req_${valid.periodId}_`)) {
+        const suffix = valid.id.slice(`cs_req_${valid.periodId}_`.length).trim().toLowerCase();
+        if (!identity!.candidates.includes(suffix)) {
+          id = `cs_req_${valid.periodId}_${effectiveStudentId}`;
+        }
+      }
+    }
+
     const nowIso = new Date().toISOString();
 
     const record: CourseSelectionRequest = {
       id,
       periodId: valid.periodId,
       periodTitle: valid.periodTitle,
-      studentId: valid.studentId,
-      studentName: valid.studentName.trim(),
+      studentId: effectiveStudentId,
+      studentName: effectiveStudentName,
       studentGrade: valid.studentGrade,
-      nationalId: valid.nationalId,
+      nationalId: effectiveNationalId,
       selectedCourses: valid.selectedCourses as any,
       status: 'pending',
       submittedAt: nowIso
@@ -150,6 +195,10 @@ export class CourseSelectionService {
     adminNotes?: string,
     callerUser?: any
   ): Promise<CourseSelectionRequest> {
+    if (!callerUser || isStudentLevelUser(callerUser)) {
+      throw new AppError('طلبه مجاز به تایید یا رد انتخاب واحد نیست.', { statusCode: 403 });
+    }
+
     const authCheck = authorizeCollectionAccess(callerUser, 'course_selection_requests', 'write');
     if (!authCheck.allowed) {
       throw new AppError(authCheck.reason || 'شما مجوز تایید یا رد انتخاب واحد را ندارید.', { statusCode: 403 });

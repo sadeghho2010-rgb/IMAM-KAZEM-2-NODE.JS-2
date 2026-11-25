@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { serverQueryCollection, serverSaveDoc, serverDeleteDoc, authorizeCollectionAccess } from '../lib/serverDataApi';
+import {
+  serverQueryCollection,
+  serverSaveDoc,
+  serverDeleteDoc,
+  authorizeCollectionAccess,
+  isStudentLevelUser
+} from '../lib/serverDataApi';
 import { AppError } from '../lib/errorHandler';
 import { logServerAudit } from '../lib/serverAuth';
 import { logger } from '../lib/logger';
@@ -36,6 +42,9 @@ export class LoanService {
    * Fetch active loans for a student
    */
   public static async getLoansByStudent(studentId: string, callerUser?: any): Promise<StudentClaimRecord[]> {
+    if (isStudentLevelUser(callerUser)) {
+      throw new AppError('دسترسی به صندوق وام و مطالبات منحصراً در اختیار امور مالی و مدیران ارشد است.', { statusCode: 403 });
+    }
     const loans = await this.getAllLoans(callerUser);
     return loans.filter(l => l.studentId === studentId);
   }

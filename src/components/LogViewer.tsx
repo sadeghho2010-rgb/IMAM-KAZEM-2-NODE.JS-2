@@ -229,9 +229,20 @@ export default function LogViewer() {
   const handleTakeImmediateBackup = async () => {
     setIsTakingBackup(true);
     try {
+      const token =
+        localStorage.getItem('auth_token') ||
+        sessionStorage.getItem('auth_token') ||
+        localStorage.getItem('access_token') ||
+        sessionStorage.getItem('access_token') ||
+        localStorage.getItem('token') ||
+        sessionStorage.getItem('token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       const res = await fetch('/api/database/scheduled-backups/run-now', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers,
+        credentials: 'include'
       });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -253,7 +264,20 @@ export default function LogViewer() {
   const handleDownloadBackupSnapshot = async () => {
     setIsTakingBackup(true);
     try {
-      const res = await fetch('/api/database/snapshot');
+      const token =
+        localStorage.getItem('auth_token') ||
+        sessionStorage.getItem('auth_token') ||
+        localStorage.getItem('access_token') ||
+        sessionStorage.getItem('access_token') ||
+        localStorage.getItem('token') ||
+        sessionStorage.getItem('token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch('/api/database/snapshot', {
+        headers,
+        credentials: 'include'
+      });
       if (!res.ok) throw new Error('خطا در دریافت فایل پشتیبان از سرور.');
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);

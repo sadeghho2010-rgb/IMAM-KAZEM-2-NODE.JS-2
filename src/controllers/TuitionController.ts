@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { TuitionService } from '../services/TuitionService';
 import { verifyAccessToken } from '../lib/serverAuth';
+import { authorizeCollectionAccess } from '../lib/serverDataApi';
 
 export class TuitionController {
   private static extractCaller(req: Request) {
@@ -38,6 +39,14 @@ export class TuitionController {
 
   public static async calculate(req: Request, res: Response, next: NextFunction) {
     try {
+      const caller = TuitionController.extractCaller(req);
+      if (!caller) {
+        return res.status(401).json({ success: false, message: 'احراز هویت الزامی است.' });
+      }
+      const authCheck = authorizeCollectionAccess(caller, 'tuition_records', 'write');
+      if (!authCheck.allowed) {
+        return res.status(403).json({ success: false, message: authCheck.reason || 'شما مجوز محاسبه شهریه را ندارید.' });
+      }
       const { profile, settings } = req.body;
       const result = TuitionService.calculateTuition(profile || req.body, settings);
       return res.status(200).json({ success: true, breakdown: result });

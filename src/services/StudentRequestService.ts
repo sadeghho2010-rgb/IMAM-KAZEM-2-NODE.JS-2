@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import { serverQueryCollection, serverSaveDoc, authorizeCollectionAccess } from '../lib/serverDataApi';
+import {
+  serverQueryCollection,
+  serverSaveDoc,
+  authorizeCollectionAccess,
+  isStudentLevelUser,
+  resolveAuthoritativeStudentIdentity,
+  getRawExistingDocById
+} from '../lib/serverDataApi';
 import { AppError } from '../lib/errorHandler';
 import { logServerAudit } from '../lib/serverAuth';
 import { logger } from '../lib/logger';
@@ -37,10 +44,14 @@ export class StudentRequestService {
     const items = await serverQueryCollection('student_requests', callerUser);
     let requests = Array.isArray(items) ? (items as StudentRequest[]) : [];
 
-    // Scoping: Level 3 student only sees their own requests
-    if (callerUser && callerUser.level === 3) {
-      const studentId = callerUser.linkedStudentId || callerUser.id;
-      return requests.filter(r => r.studentId === studentId);
+    // Scoping: Student-level caller only sees their own requests across all identity aliases
+    if (callerUser && isStudentLevelUser(callerUser)) {
+      const identity = await resolveAuthoritativeStudentIdentity(callerUser);
+      return requests.filter(r => {
+        const rSid = String(r.studentId || '').trim().toLowerCase();
+        const rNat = String(r.nationalCode || '').trim().toLowerCase();
+        return identity.candidates.includes(rSid) || (Boolean(rNat) && identity.candidates.includes(rNat));
+      });
     }
 
     // Scoping by unit for officers
@@ -76,14 +87,29 @@ export class StudentRequestService {
     }
 
     const validData = parsed.data;
+    const isStudent = isStudentLevelUser(callerUser);
+    const identity = isStudent ? await resolveAuthoritativeStudentIdentity(callerUser) : null;
+
+    if (isStudent && validData.id) {
+      const existing = await getRawExistingDocById('student_requests', validData.id);
+      if (existing) {
+        const exSid = String(existing.studentId || '').trim().toLowerCase();
+        const exNat = String(existing.nationalCode || '').trim().toLowerCase();
+        const ownsExisting = identity!.candidates.includes(exSid) || (Boolean(exNat) && identity!.candidates.includes(exNat));
+        if (!ownsExisting) {
+          throw new AppError('شما مجاز به تغییر درخواست طلبه دیگر نیستید.', { statusCode: 403 });
+        }
+      }
+    }
+
     const id = validData.id || `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const nowIso = new Date().toISOString();
 
     const record: StudentRequest = {
       id,
-      studentId: validData.studentId,
-      studentName: validData.studentName.trim(),
-      nationalCode: validData.nationalCode,
+      studentId: isStudent && identity?.studentId ? identity.studentId : validData.studentId,
+      studentName: isStudent && identity?.studentName ? identity.studentName : validData.studentName.trim(),
+      nationalCode: isStudent && identity?.nationalCode ? identity.nationalCode : validData.nationalCode,
       grade: validData.grade,
       unit: validData.unit,
       category: validData.category,
@@ -115,6 +141,9 @@ export class StudentRequestService {
     replyData: { replyText: string; status?: any; rejectionReason?: string },
     callerUser?: any
   ): Promise<StudentRequest> {
+    if (!callerUser || isStudentLevelUser(callerUser)) {
+      throw new AppError('طلبه مجاز به پاسخگویی یا تغییر وضعیت نهایی درخواست نیست.', { statusCode: 403 });
+    }
     const authCheck = authorizeCollectionAccess(callerUser, 'student_requests', 'write');
     if (!authCheck.allowed) {
       throw new AppError(authCheck.reason || 'شما مجوز پاسخگویی به درخواست را ندارید.', { statusCode: 403 });
