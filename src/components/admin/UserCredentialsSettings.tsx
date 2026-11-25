@@ -232,7 +232,7 @@ export default function UserCredentialsSettings() {
     setEditingUser(user);
     setFormName(user.name);
     setFormUsername(user.username);
-    setFormPassword(user.password || '');
+    setFormPassword('');
     setFormLevel(user.level);
     setFormRole(user.role);
     setFormRoleTitle(user.roleTitle);
@@ -242,7 +242,7 @@ export default function UserCredentialsSettings() {
 
   const handleSaveModal = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formUsername.trim() || !formName.trim() || !formPassword.trim()) {
+    if (!formUsername.trim() || !formName.trim() || (!editingUser && !formPassword.trim())) {
       alert('لطفاً تمامی فیلدهای الزامی را تکمیل کنید.');
       return;
     }
@@ -721,8 +721,8 @@ export default function UserCredentialsSettings() {
                       type="text"
                       value={formPassword}
                       onChange={(e) => setFormPassword(e.target.value)}
-                      placeholder="رمز عبور دلخواه"
-                      required
+                      placeholder={editingUser ? 'در صورت تغییر وارد کنید' : 'رمز عبور دلخواه'}
+                      required={!editingUser}
                       dir="ltr"
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-950 focus:outline-none focus:bg-white focus:border-indigo-500 text-right"
                     />

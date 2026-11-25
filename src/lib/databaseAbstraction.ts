@@ -796,26 +796,29 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
     const targetPassword = process.env.DEFAULT_ADMIN_PASSWORD || process.env.INITIAL_ADMIN_PASSWORD;
 
     if (!existingAdmin || existingAdmin.length === 0) {
-      const defaultPass = targetPassword || '8411924As';
-      const passwordHash = await bcrypt.hash(defaultPass, 10);
-      const allTabsJson = JSON.stringify([
-        'todos', 'workflow', 'academic-calendar', 'presence-hours', 'finance', 'students', 'active-students',
-        'discussion', 'programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'stats', 'research',
-        'attendance', 'course-selection', 'comments', 'summary', 'teachers-bank', 'backup', 'user-management', 'user-credentials', 'audit-logs'
-      ]);
+      if (!targetPassword) {
+        console.warn('[MySQL Startup] ⚠️ متغیر محیطی DEFAULT_ADMIN_PASSWORD یا INITIAL_ADMIN_PASSWORD تنظیم نشده است؛ ایجاد خودکار کاربر اولیه SADEGH انجام نشد.');
+      } else {
+        const passwordHash = await bcrypt.hash(targetPassword, 10);
+        const allTabsJson = JSON.stringify([
+          'todos', 'workflow', 'academic-calendar', 'presence-hours', 'finance', 'students', 'active-students',
+          'discussion', 'programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'stats', 'research',
+          'attendance', 'course-selection', 'comments', 'summary', 'teachers-bank', 'backup', 'user-management', 'user-credentials', 'audit-logs'
+        ]);
 
-      for (const tbl of ['all_users', 'system_users']) {
-        await mysqlPool.query(`
-          INSERT INTO ${tbl} (
-            id, username, password_hash, name, role, role_title, level, grade_label,
-            mentor_id, avatar_bg, allowed_tabs, editable_tabs, is_active, must_change_password
-          ) VALUES (
-            'user_sadegh', 'SADEGH', ?, 'صادق (سوپر ادمین)', 'super_admin', 'سوپر ادمین (مدیر کل سیستم)',
-            1, 'کل سیستم', 'shahpoori', 'bg-indigo-700', ?, ?, 1, 0
-          ) ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash), name = VALUES(name)
-        `, [passwordHash, allTabsJson, allTabsJson]);
+        for (const tbl of ['all_users', 'system_users']) {
+          await mysqlPool.query(`
+            INSERT INTO ${tbl} (
+              id, username, password_hash, name, role, role_title, level, grade_label,
+              mentor_id, avatar_bg, allowed_tabs, editable_tabs, is_active, must_change_password
+            ) VALUES (
+              'user_sadegh', 'SADEGH', ?, 'صادق (سوپر ادمین)', 'super_admin', 'سوپر ادمین (مدیر کل سیستم)',
+              1, 'کل سیستم', 'shahpoori', 'bg-indigo-700', ?, ?, 1, 0
+            ) ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash), name = VALUES(name)
+          `, [passwordHash, allTabsJson, allTabsJson]);
+        }
+        console.log(`[MySQL Startup] ✅ کاربر سوپر ادمین SADEGH با موفقیت در دیتابیس (جدول all_users) ساخته شد.`);
       }
-      console.log(`[MySQL Startup] ✅ کاربر سوپر ادمین SADEGH با موفقیت در دیتابیس (جدول all_users) ساخته شد.`);
     } else {
       // existingAdmin exists! If password is provided, perform updates/migrations
       if (targetPassword) {
@@ -1497,8 +1500,7 @@ export const MysqlRepository = {
     if (!uName) return;
 
     const uId = user.id || `user_${uName.toLowerCase()}`;
-    const pHash = user.passwordHash || (user as any).password || null;
-    const plainPass = (user as any).password || null;
+    const pHash = user.passwordHash || null;
     const allowedTabs = JSON.stringify(user.allowedTabs || []);
     const editableTabs = JSON.stringify(user.editableTabs || []);
     const modulePerms = JSON.stringify(user.modulePermissions || {});
@@ -1519,11 +1521,11 @@ export const MysqlRepository = {
           mentor_id, student_id, linked_student_id, teacher_id, avatar_bg, allowed_tabs,
           editable_tabs, module_permissions, is_active, is_read_only, can_edit, must_change_password,
           failed_login_attempts, account_locked_until, last_login, data, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+        ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
         ON DUPLICATE KEY UPDATE
           name = ?,
           password_hash = COALESCE(NULLIF(?, ''), password_hash),
-          password = COALESCE(NULLIF(?, ''), password),
+          password = NULL,
           role = ?,
           role_title = ?,
           level = ?,
@@ -1559,13 +1561,13 @@ export const MysqlRepository = {
       const roleTitle = cleanNullableStr(user.roleTitle);
 
       await pool.query(sqlAllUsers, [
-        uId, uName, pHash, plainPass, userName, userRole, roleTitle,
+        uId, uName, pHash, userName, userRole, roleTitle,
         userLevel, userGrade, mentorId,
         studentId, linkedStudentId, teacherId,
         avatarBg, allowedTabs, editableTabs, modulePerms, isActive,
         isReadOnly, canEdit, mustChange, failedAttempts, lockedUntil, lastLogin, userData,
         // UPDATE params
-        userName, pHash, plainPass, userRole, roleTitle,
+        userName, pHash, userRole, roleTitle,
         userLevel, userGrade, mentorId,
         studentId, linkedStudentId, teacherId,
         avatarBg, allowedTabs, editableTabs, modulePerms, isActive,
@@ -1631,9 +1633,10 @@ export const MysqlRepository = {
       console.warn(`[STORAGE_FAILURE] MySQL saveUser system_users mirror notice for user "${uName}":`, e2?.message || e2);
     }
 
-    // 3. Mirror into app_collections for unified querying under both names
+    // 3. Mirror into app_collections for unified querying under both names (strictly without plaintext password)
     try {
-      const userDoc = { ...user, id: uId, username: uName };
+      const { password: _removedPlainPassword, ...userWithoutPassword } = user as any;
+      const userDoc = { ...userWithoutPassword, id: uId, username: uName };
       await this.saveDocument('all_users', uId, userDoc);
       await this.saveDocument('system_users', uId, userDoc);
     } catch (e3: any) {

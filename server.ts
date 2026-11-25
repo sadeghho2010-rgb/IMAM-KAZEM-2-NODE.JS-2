@@ -67,8 +67,38 @@ async function startServer() {
   app.use(helmet({ contentSecurityPolicy: false }));
 
   // Cross-Origin Resource Sharing (CORS) Configuration
+  const defaultAllowedOrigins = [
+    'https://hosoonsamaneh.ir',
+    'https://www.hosoonsamaneh.ir',
+  ];
+  const envAllowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map(origin => origin.trim().replace(/\/+$/, ''))
+    .filter(Boolean);
+  const allowedOriginsSet = new Set([...defaultAllowedOrigins, ...envAllowedOrigins]);
+
   app.use(cors({
-    origin: true,
+    origin: (origin, callback) => {
+      // Allow requests with no Origin header (mobile apps, PWA, internal tools, health checks)
+      if (!origin) {
+        return callback(null, true);
+      }
+      const normalizedOrigin = origin.trim().replace(/\/+$/, '');
+      if (allowedOriginsSet.has(normalizedOrigin)) {
+        return callback(null, true);
+      }
+      if (process.env.NODE_ENV !== 'production') {
+        try {
+          const parsedUrl = new URL(normalizedOrigin);
+          if (parsedUrl.hostname === 'localhost' || parsedUrl.hostname === '127.0.0.1') {
+            return callback(null, true);
+          }
+        } catch {
+          // Ignore malformed Origin header
+        }
+      }
+      return callback(null, false);
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-TOKEN'],

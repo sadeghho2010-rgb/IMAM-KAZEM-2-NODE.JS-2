@@ -193,7 +193,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     e.preventDefault();
     if (!selectedStudentForCredentials || isSavingCreds) return;
 
-    if (!credUsername.trim() || !credPassword.trim()) {
+    if (!credUsername.trim() || (!editingCredUser && !credPassword.trim())) {
       alert('نام کاربری و کلمه عبور نمی‌تواند خالی باشد.');
       return;
     }
@@ -206,7 +206,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
         // Update
         await updateUser(editingCredUser.id, {
           username: cleanUsername,
-          password: credPassword.trim(),
+          ...(credPassword.trim() ? { password: credPassword.trim() } : {}),
           name: selectedStudentForCredentials.name,
           fullName: selectedStudentForCredentials.name,
           linkedStudentId: selectedStudentForCredentials.id,
@@ -2235,7 +2235,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                       if (studentUser) {
                         setEditingCredUser(studentUser);
                         setCredUsername(studentUser.username);
-                        setCredPassword(studentUser.password || '');
+                        setCredPassword('');
                         setCredName(studentUser.name);
                       } else {
                         setEditingCredUser(null);
@@ -3440,8 +3440,8 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                     value={credPassword}
                     onChange={(e) => setCredPassword(e.target.value)}
                     disabled={!isAuthorizedToManage}
-                    placeholder="بدون شماره موبایل (موبایل را در پرونده ثبت کنید)"
-                    required
+                    placeholder={editingCredUser ? 'در صورت تغییر وارد کنید' : 'بدون شماره موبایل (موبایل را در پرونده ثبت کنید)'}
+                    required={!editingCredUser}
                     dir="ltr"
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-950 focus:outline-none focus:bg-white focus:border-indigo-500 text-right disabled:opacity-75 disabled:bg-slate-100"
                   />
@@ -3502,7 +3502,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                     {isAuthorizedToManage && (
                       <button
                         type="submit"
-                        disabled={!credUsername.trim() || !credPassword.trim() || isSavingCreds}
+                        disabled={!credUsername.trim() || (!editingCredUser && !credPassword.trim()) || isSavingCreds}
                         className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-600/10 cursor-pointer"
                       >
                         {isSavingCreds ? 'در حال ثبت حساب...' : (editingCredUser ? 'ذخیره تغییرات' : 'ایجاد حساب کاربری')}

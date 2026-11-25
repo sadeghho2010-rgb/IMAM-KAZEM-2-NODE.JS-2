@@ -579,7 +579,6 @@ export function sanitizeUser(user: StoredUser | any): SafeUser {
     canManageUsers: Boolean(user.canManageUsers),
     canBackup: user.canBackup !== undefined ? Boolean(user.canBackup) : true,
     avatarBg: user.avatarBg,
-    password: user.password || user.plainPassword || '',
     allowedTabs: Array.isArray(user.allowedTabs) ? user.allowedTabs : [],
     editableTabs: Array.isArray(user.editableTabs) ? user.editableTabs : [],
     modulePermissions: user.modulePermissions || {},
@@ -698,15 +697,18 @@ export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
     });
   }
 
-  // Ensure default super admin SADEGH is ALWAYS valid, present, and unlocked
+  // Ensure default super admin SADEGH is valid, present, and unlocked when configured
   const wasSadeghMissing = !usersMap.has('SADEGH');
   if (wasSadeghMissing) {
     const defaultSadegh = DEFAULT_SERVER_USERS.find(u => u.username === 'SADEGH');
     if (defaultSadegh) {
-      usersMap.set('SADEGH', { ...defaultSadegh });
-    } else {
-      const fallbackPass = INITIAL_ADMIN_PASSWORD || '8411924As';
-      const hash = await hashPassword(fallbackPass);
+      const { password: seedPass, ...safeDefaultSadegh } = defaultSadegh;
+      usersMap.set('SADEGH', {
+        ...safeDefaultSadegh,
+        ...(seedPass ? { passwordHash: await hashPassword(seedPass) } : {})
+      });
+    } else if (INITIAL_ADMIN_PASSWORD) {
+      const hash = await hashPassword(INITIAL_ADMIN_PASSWORD);
       usersMap.set('SADEGH', {
         id: 'user_sadegh',
         username: 'SADEGH',
@@ -728,6 +730,8 @@ export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
           'attendance', 'course-selection', 'comments', 'summary', 'teachers-bank', 'backup', 'user-management', 'user-credentials', 'audit-logs'
         ]
       });
+    } else {
+      console.warn('[Security Config] DEFAULT_ADMIN_PASSWORD / INITIAL_ADMIN_PASSWORD تنظیم نشده است؛ کاربر پیش‌فرض SADEGH ایجاد نشد.');
     }
   } else {
     const cur = usersMap.get('SADEGH')!;
@@ -868,9 +872,14 @@ export function evictUserFromMemoryStores(userIdOrUsername: string) {
 
 export async function saveUserToStorage(user: StoredUser, options: { isLogin?: boolean } = {}): Promise<void> {
   const cleanId = (user.username || '').trim().toUpperCase();
+  const { password: _strippedPassword, ...userWithoutPlainPassword } = user;
+  const normalizedUser: StoredUser = {
+    ...userWithoutPlainPassword,
+    ...(cleanId ? { username: cleanId } : {})
+  };
   if (cleanId) {
-    serverMemoryUsers.set(cleanId, { ...user, username: cleanId });
-    userCache.set(cleanId, { user: { ...user, username: cleanId }, cachedAt: Date.now() });
+    serverMemoryUsers.set(cleanId, normalizedUser);
+    userCache.set(cleanId, { user: normalizedUser, cachedAt: Date.now() });
   }
 
   const performAsyncStorage = async () => {
@@ -894,7 +903,7 @@ export async function saveUserToStorage(user: StoredUser, options: { isLogin?: b
 
     if (isMysqlConfigured) {
       try {
-        await MysqlRepository.saveUser(user as unknown as Parameters<typeof MysqlRepository.saveUser>[0]);
+        await MysqlRepository.saveUser(normalizedUser as unknown as Parameters<typeof MysqlRepository.saveUser>[0]);
       } catch (mErr: any) {
         console.error(`[STORAGE_FAILURE] MySQL saveUser failed for username "${cleanId}":`, mErr?.message || mErr);
         throw mErr;
@@ -1031,6 +1040,11 @@ export async function migrateAllPlainPasswords(): Promise<{ totalUsers: number; 
       user.passwordHash = await hashPassword(currentHash);
       modified = true;
       migratedCount += 1;
+    }
+
+    if ('password' in user) {
+      delete user.password;
+      modified = true;
     }
 
     if (modified) {

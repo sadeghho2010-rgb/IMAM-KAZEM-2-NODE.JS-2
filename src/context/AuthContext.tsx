@@ -666,7 +666,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             ...u,
             id: resolvedId,
             username: rawUname,
-            password: (u.password && u.password.trim() !== '') ? u.password.trim() : (prevUser?.password || ''),
             name: u.name || u.fullName || prevUser?.name || rawUname,
             level: ((Number(u.level) || (u.role === 'teacher' ? 3 : (prevUser?.level || 2))) as UserLevel),
             role: u.role || prevUser?.role || 'custom',
@@ -1537,12 +1536,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             finalEditableTabs = u.editableTabs || [];
           }
 
+          const { password: _uPrevPass, ...uWithoutPass } = u;
+          const { password: _updPass, ...updatesWithoutPass } = updates;
           const updated: AppUser = { 
-            ...u, 
-            ...updates,
+            ...uWithoutPass, 
+            ...updatesWithoutPass,
             id: u.id && !u.id.startsWith('user_fallback_') ? u.id : (id.startsWith('user_fallback_') ? `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}` : id),
             username: cleanUsername || uUname || cleanId,
-            password: (updates.password && updates.password.trim() !== '') ? updates.password.trim() : (u.password || ''),
             linkedStudentId: studentId || u.linkedStudentId || u.studentId,
             studentId: studentId || u.studentId || u.linkedStudentId,
             allowedTabs: finalAllowedTabs,
@@ -1628,6 +1628,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           user: targetUser,
           expiresAt: Date.now() + 15000
         });
+        const { password: _targetPlainPass, ...targetUserWithoutPass } = targetUser;
         fetch('/api/auth/update-user', {
           method: 'POST',
           headers,
@@ -1635,8 +1636,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           body: JSON.stringify({
             targetUserId: id,
             updates: {
-              ...targetUser,
-              ...(targetUser.password ? { password: targetUser.password } : (updates.password ? { password: updates.password } : {}))
+              ...targetUserWithoutPass,
+              ...(updates.password && updates.password.trim() ? { password: updates.password.trim() } : {})
             }
           })
         }).then(async res => {

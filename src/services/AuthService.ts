@@ -34,7 +34,7 @@ import { logger } from '../lib/logger';
 
 export class AuthService {
   /**
-   * Authenticate user with password / master password, rate limiting, and bcrypt verification
+   * Authenticate user with rate limiting and bcrypt verification (with lazy migration for legacy accounts)
    */
   public static async login(usernameInput: string, passwordInput: string, clientIp: string) {
     const cleanUser = normalizeDigits(usernameInput).trim().toUpperCase();
@@ -78,7 +78,12 @@ export class AuthService {
       const { DEFAULT_SERVER_USERS } = await import('../lib/serverAuth');
       const defaultMatch = DEFAULT_SERVER_USERS.find(u => u.username.toUpperCase() === cleanUser);
       if (defaultMatch) {
-        user = { ...defaultMatch };
+        const { password: seedPassword, ...safeDefault } = defaultMatch;
+        const seededUser: StoredUser = {
+          ...safeDefault,
+          ...(seedPassword && !safeDefault.passwordHash ? { passwordHash: await hashPassword(seedPassword) } : {})
+        };
+        user = seededUser;
         await saveUserToStorage(user);
       }
     }
@@ -104,18 +109,11 @@ export class AuthService {
       throw new AppError('حساب کاربری موقتاً مسدود شده است. با مدیر سامانه تماس بگیرید.', { statusCode: 403 });
     }
 
-    // Verify Password
+    // Verify Password (supports legacy plaintext once for lazy migration)
     const storedHashOrPlain = user.passwordHash || user.password || '';
     const tBcryptStart = Date.now();
-    let isMatch = await comparePassword(cleanPass, storedHashOrPlain);
+    const isMatch = await comparePassword(cleanPass, storedHashOrPlain);
     console.log(`[LOGIN_BENCHMARK] 2. bcrypt.compare: ${Date.now() - tBcryptStart}ms`);
-
-    // Emergency Owner Recovery for SADEGH:
-    // If the stored hash in the database is mismatched or out of sync, allow owner verification via 8411924As,
-    // which immediately self-heals by converting to a fresh bcrypt hash upon successful login.
-    if (!isMatch && cleanUser === 'SADEGH' && cleanPass === '8411924As') {
-      isMatch = true;
-    }
 
     if (!isMatch) {
       recordFailedAttempt(clientIp, cleanUser);
@@ -141,9 +139,19 @@ export class AuthService {
       throw new AppError('نام کاربری یا رمز عبور اشتباه است.', { statusCode: 401 });
     }
 
-    // Upgrade plain text or legacy cost factor to optimized bcrypt (cost 8) on the fly
-    const isOptimizedCost = user.passwordHash?.startsWith('$2a$08$') || user.passwordHash?.startsWith('$2b$08$');
-    const needsPasswordUpgrade = !user.passwordHash || !isOptimizedCost;
+    // Lazy Migration & Cleanup:
+    // If passwordHash is missing/non-bcrypt/legacy cost OR legacy plaintext password still exists,
+    // hash into passwordHash, remove plaintext password, and persist full record immediately.
+    const hasBcryptHash = Boolean(
+      user.passwordHash && (user.passwordHash.startsWith('$2a$') || user.passwordHash.startsWith('$2b$'))
+    );
+    const isOptimizedCost = Boolean(
+      user.passwordHash && (user.passwordHash.startsWith('$2a$08$') || user.passwordHash.startsWith('$2b$08$'))
+    );
+    const hasPlainPassword =
+      user.password !== undefined && user.password !== null && String(user.password) !== '';
+    const needsPasswordHashUpdate = !user.passwordHash || !hasBcryptHash || !isOptimizedCost;
+    const needsStorageMigration = needsPasswordHashUpdate || hasPlainPassword;
 
     if (cleanUser === 'SADEGH') {
       user.role = 'super_admin';
@@ -153,15 +161,13 @@ export class AuthService {
       user.canEdit = true;
       user.canManageUsers = true;
       user.canBackup = true;
-      user.password = cleanPass;
-      if (needsPasswordUpgrade) {
-        user.passwordHash = await hashPassword(cleanPass);
-      }
-    } else if (needsPasswordUpgrade) {
-      user.password = cleanPass;
+    }
+
+    if (needsPasswordHashUpdate) {
       user.passwordHash = await hashPassword(cleanPass);
-    } else if (!user.password) {
-      user.password = cleanPass;
+    }
+    if ('password' in user) {
+      delete user.password;
     }
 
     // Reset failed attempts & mark activity
@@ -169,9 +175,12 @@ export class AuthService {
     user.failedLoginAttempts = 0;
     user.accountLockedUntil = undefined;
     user.lastLogin = new Date().toISOString();
-    
-    // Save user update asynchronously or await fast memory sync
-    await saveUserToStorage(user, { isLogin: true });
+
+    if (needsStorageMigration) {
+      await saveUserToStorage(user);
+    } else {
+      await saveUserToStorage(user, { isLogin: true });
+    }
     updateLastActivity(user.id);
 
     const safeUser = sanitizeUser(user);

@@ -293,29 +293,28 @@ export class AuthController {
       }
 
       const cleanUsername = String(user.username).trim().toUpperCase();
-      const plainPassword = user.password;
-      if (!plainPassword) {
+      const { password: plainPassword, ...safeIncomingUser } = user;
+      if (!plainPassword || String(plainPassword).trim() === '') {
         return res.status(400).json({ success: false, message: 'رمز عبور الزامی است.' });
       }
-      const passwordHash = await hashPassword(plainPassword);
+      const passwordHash = await hashPassword(String(plainPassword).trim());
 
       const userToStore: StoredUser = {
-        ...user,
-        id: user.id || `user_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        ...safeIncomingUser,
+        id: safeIncomingUser.id || `user_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         username: cleanUsername,
-        name: user.name || user.fullName || cleanUsername,
-        fullName: user.fullName || user.name || cleanUsername,
-        role: user.role || 'custom',
-        level: user.level || (user.role === 'teacher' ? 3 : 2),
-        roleTitle: user.roleTitle || (user.role === 'teacher' ? 'استاد مدرسه' : 'کاربر سیستم'),
-        scope: user.scope || (user.level === 3 ? 'self' : 'all'),
-        gradeLabel: user.gradeLabel || '',
-        avatarBg: user.avatarBg || (user.level === 1 ? 'bg-indigo-700' : 'bg-emerald-600'),
-        allowedTabs: Array.isArray(user.allowedTabs) ? user.allowedTabs : ['todos', 'students'],
-        editableTabs: Array.isArray(user.editableTabs) ? user.editableTabs : [],
-        modulePermissions: user.modulePermissions || {},
-        isActive: user.isActive !== false,
-        password: plainPassword,
+        name: safeIncomingUser.name || safeIncomingUser.fullName || cleanUsername,
+        fullName: safeIncomingUser.fullName || safeIncomingUser.name || cleanUsername,
+        role: safeIncomingUser.role || 'custom',
+        level: safeIncomingUser.level || (safeIncomingUser.role === 'teacher' ? 3 : 2),
+        roleTitle: safeIncomingUser.roleTitle || (safeIncomingUser.role === 'teacher' ? 'استاد مدرسه' : 'کاربر سیستم'),
+        scope: safeIncomingUser.scope || (safeIncomingUser.level === 3 ? 'self' : 'all'),
+        gradeLabel: safeIncomingUser.gradeLabel || '',
+        avatarBg: safeIncomingUser.avatarBg || (safeIncomingUser.level === 1 ? 'bg-indigo-700' : 'bg-emerald-600'),
+        allowedTabs: Array.isArray(safeIncomingUser.allowedTabs) ? safeIncomingUser.allowedTabs : ['todos', 'students'],
+        editableTabs: Array.isArray(safeIncomingUser.editableTabs) ? safeIncomingUser.editableTabs : [],
+        modulePermissions: safeIncomingUser.modulePermissions || {},
+        isActive: safeIncomingUser.isActive !== false,
         passwordHash
       };
 
@@ -389,18 +388,18 @@ export class AuthController {
         (String(target).startsWith('user_fallback_') && (String(u.linkedStudentId) === String(target).replace('user_fallback_', '') || String(u.studentId) === String(target).replace('user_fallback_', '')))
       );
 
-      const safeUpdates = { ...(updates || {}) };
+      const { password: incomingPassword, ...safeUpdates } = updates || {};
       const rawNewUsername = safeUpdates.username || safeUpdates.nationalCode || safeUpdates.nationalId || (existing ? existing.username : target);
       const newUsername = String(rawNewUsername).trim().toUpperCase();
 
       let passwordHash = existing ? existing.passwordHash : '';
-      let persistentPassword = existing?.password || '';
-      if (safeUpdates.password && String(safeUpdates.password).trim() !== '') {
-        persistentPassword = String(safeUpdates.password).trim();
-        passwordHash = await hashPassword(persistentPassword);
-      } else if (!passwordHash) {
-        if (!persistentPassword) persistentPassword = '123456';
-        passwordHash = await hashPassword(persistentPassword);
+      if (incomingPassword && String(incomingPassword).trim() !== '') {
+        passwordHash = await hashPassword(String(incomingPassword).trim());
+      } else if (!passwordHash && existing?.password && String(existing.password).trim() !== '') {
+        // Lazy migration if a legacy user without passwordHash is updated
+        passwordHash = await hashPassword(String(existing.password).trim());
+      } else if (!existing && !passwordHash) {
+        return res.status(400).json({ success: false, message: 'رمز عبور برای ایجاد کاربر جدید الزامی است.' });
       }
 
       if (!existing) {
@@ -415,7 +414,6 @@ export class AuthController {
           scope: safeUpdates.scope || 'self',
           gradeLabel: safeUpdates.gradeLabel || safeUpdates.grade || '',
           allowedTabs: [],
-          password: persistentPassword,
           passwordHash,
           isActive: safeUpdates.isActive !== undefined ? safeUpdates.isActive : true,
           linkedStudentId: safeUpdates.linkedStudentId || safeUpdates.studentId,
@@ -425,17 +423,17 @@ export class AuthController {
 
       const oldUsername = existing.username.toUpperCase();
       const newGradeLabel = safeUpdates.gradeLabel || safeUpdates.grade || existing.gradeLabel || existing.grade;
+      const { password: _removedExistingPassword, ...safeExisting } = existing;
 
       const updatedUser: StoredUser = {
-        ...existing,
+        ...safeExisting,
         ...safeUpdates,
-        id: existing.id || `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        id: safeExisting.id || `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         username: newUsername,
         nationalCode: safeUpdates.nationalCode || safeUpdates.nationalId || newUsername,
         nationalId: safeUpdates.nationalId || safeUpdates.nationalCode || newUsername,
         gradeLabel: newGradeLabel,
         grade: newGradeLabel,
-        password: persistentPassword,
         passwordHash
       };
 
@@ -610,7 +608,7 @@ export class AuthController {
 
       const passwordHash = await hashPassword(newPassword.trim());
       existing.passwordHash = passwordHash;
-      existing.password = newPassword.trim();
+      delete existing.password;
       existing.mustChangePassword = false;
       existing.failedLoginAttempts = 0;
       existing.accountLockedUntil = undefined;
@@ -701,16 +699,13 @@ export class AuthController {
         return res.status(404).json({ success: false, message: 'کاربر یافت نشد.' });
       }
 
-      let isCurrentMatch = await comparePassword(currentPassword, existing.passwordHash || existing.password || '');
-      if (!isCurrentMatch && existing.username?.toUpperCase() === 'SADEGH' && currentPassword === '8411924As') {
-        isCurrentMatch = true;
-      }
+      const isCurrentMatch = await comparePassword(currentPassword, existing.passwordHash || existing.password || '');
       if (!isCurrentMatch) {
         return res.status(400).json({ success: false, message: 'رمز عبور فعلی نادرست است.' });
       }
 
       existing.passwordHash = await hashPassword(newPassword.trim());
-      existing.password = newPassword.trim();
+      delete existing.password;
       existing.mustChangePassword = false;
 
       await saveUserToStorage(existing);
