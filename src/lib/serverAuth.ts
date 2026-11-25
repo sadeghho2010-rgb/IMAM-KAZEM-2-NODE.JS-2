@@ -294,10 +294,6 @@ const usernameAttempts = new Map<string, AttemptTracker>();
 
 export function checkRateLimit(ip: string, username: string): { allowed: boolean; waitMinutes?: number } {
   const cleanUser = (username || '').trim().toUpperCase();
-  // Super admin recovery bypass: SADEGH is never locked out by rate limiting
-  if (cleanUser === 'SADEGH') {
-    return { allowed: true };
-  }
 
   const now = Date.now();
   const WINDOW_MS = 15 * 60 * 1000; // 15 mins
@@ -343,7 +339,6 @@ export function checkRateLimit(ip: string, username: string): { allowed: boolean
 
 export function recordFailedAttempt(ip: string, username: string) {
   const cleanUser = (username || '').trim().toUpperCase();
-  if (cleanUser === 'SADEGH') return; // Do not record lockout attempts for super admin recovery account
 
   const now = Date.now();
   const WINDOW_MS = 15 * 60 * 1000;
@@ -697,22 +692,49 @@ export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
     });
   }
 
-  // Ensure default super admin SADEGH is valid, present, and unlocked when configured
-  const wasSadeghMissing = !usersMap.has('SADEGH');
-  if (wasSadeghMissing) {
-    const defaultSadegh = DEFAULT_SERVER_USERS.find(u => u.username === 'SADEGH');
-    if (defaultSadegh) {
-      const { password: seedPass, ...safeDefaultSadegh } = defaultSadegh;
-      usersMap.set('SADEGH', {
-        ...safeDefaultSadegh,
+  // Bootstrap initial super_admin ONLY if no active super_admin account exists in storage
+  const hasActiveSuperAdmin = Array.from(usersMap.values()).some(
+    u => u.role === 'super_admin' && Number(u.level) === 1 && u.isActive !== false
+  );
+
+  if (!hasActiveSuperAdmin) {
+    const initialAdminUsername = (process.env.INITIAL_ADMIN_USERNAME || 'SADEGH').trim().toUpperCase();
+    const defaultAdminTemplate = DEFAULT_SERVER_USERS.find(u => u.role === 'super_admin');
+    const existingAdminRecord = usersMap.get(initialAdminUsername);
+
+    if (existingAdminRecord && INITIAL_ADMIN_PASSWORD) {
+      const newAdminHash = await hashPassword(INITIAL_ADMIN_PASSWORD);
+      const recoveredAdmin: StoredUser = {
+        ...existingAdminRecord,
+        role: 'super_admin',
+        level: 1,
+        isActive: true,
+        canEdit: true,
+        canManageUsers: true,
+        canBackup: true,
+        passwordHash: newAdminHash
+      };
+      delete recoveredAdmin.password;
+      usersMap.set(initialAdminUsername, recoveredAdmin);
+      await saveUserToStorage(recoveredAdmin);
+      console.log('[Security Bootstrap] حساب مدیر ارشد اولیه بر اساس متغیرهای محیطی بازیابی شد.');
+    } else if (defaultAdminTemplate) {
+      const { password: seedPass, ...safeDefaultAdmin } = defaultAdminTemplate;
+      const targetUsername = (process.env.INITIAL_ADMIN_USERNAME || safeDefaultAdmin.username).trim().toUpperCase();
+      const seededAdmin: StoredUser = {
+        ...safeDefaultAdmin,
+        username: targetUsername,
         ...(seedPass ? { passwordHash: await hashPassword(seedPass) } : {})
-      });
+      };
+      usersMap.set(targetUsername, seededAdmin);
+      await saveUserToStorage(seededAdmin);
+      console.log('[Security Bootstrap] حساب مدیر ارشد اولیه در نبود حساب super_admin فعال ایجاد شد.');
     } else if (INITIAL_ADMIN_PASSWORD) {
       const hash = await hashPassword(INITIAL_ADMIN_PASSWORD);
-      usersMap.set('SADEGH', {
-        id: 'user_sadegh',
-        username: 'SADEGH',
-        name: 'صادق (سوپر ادمین)',
+      const createdAdmin: StoredUser = {
+        id: `user_${initialAdminUsername.toLowerCase()}`,
+        username: initialAdminUsername,
+        name: 'مدیر کل سامانه',
         role: 'super_admin',
         level: 1,
         scope: 'all',
@@ -729,41 +751,12 @@ export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
           'discussion', 'programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'stats', 'research',
           'attendance', 'course-selection', 'comments', 'summary', 'teachers-bank', 'backup', 'user-management', 'user-credentials', 'audit-logs'
         ]
-      });
+      };
+      usersMap.set(initialAdminUsername, createdAdmin);
+      await saveUserToStorage(createdAdmin);
+      console.log('[Security Bootstrap] حساب مدیر ارشد اولیه در نبود حساب super_admin فعال ایجاد شد.');
     } else {
-      console.warn('[Security Config] DEFAULT_ADMIN_PASSWORD / INITIAL_ADMIN_PASSWORD تنظیم نشده است؛ کاربر پیش‌فرض SADEGH ایجاد نشد.');
-    }
-  } else {
-    const cur = usersMap.get('SADEGH')!;
-    usersMap.set('SADEGH', {
-      ...cur,
-      username: 'SADEGH',
-      role: 'super_admin',
-      level: 1,
-      isActive: true,
-      canEdit: true,
-      canManageUsers: true,
-      canBackup: true,
-      accountLockedUntil: undefined,
-      failedLoginAttempts: 0
-    });
-  }
-
-  // --- ENVIRONMENT PASSWORD SYNCHRONIZATION ---
-  // If INITIAL_ADMIN_PASSWORD is provided in environment variables and differs from SADEGH's current hash, sync it
-  const sadeghUser = usersMap.get('SADEGH');
-  if (sadeghUser && sadeghUser.passwordHash && INITIAL_ADMIN_PASSWORD) {
-    try {
-      const isSame = await comparePassword(INITIAL_ADMIN_PASSWORD, sadeghUser.passwordHash);
-      if (!isSame) {
-        const newSadeghHash = await hashPassword(INITIAL_ADMIN_PASSWORD);
-        sadeghUser.passwordHash = newSadeghHash;
-        if (sadeghUser.password) delete sadeghUser.password;
-        await saveUserToStorage(sadeghUser);
-        console.log('[Security Sync] 🔒 رمز سوپر ادمین SADEGH مطابق متغیر محیطی به‌روزرسانی شد.');
-      }
-    } catch (e) {
-      console.error('[Security Sync Error] SADEGH password sync failed:', e);
+      console.warn('[Security Config] هیچ حساب super_admin فعالی یافت نشد و DEFAULT_ADMIN_PASSWORD / INITIAL_ADMIN_PASSWORD تنظیم نشده است.');
     }
   }
 
