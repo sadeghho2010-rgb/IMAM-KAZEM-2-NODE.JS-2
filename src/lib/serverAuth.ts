@@ -53,6 +53,8 @@ export interface SafeUser {
   studentId?: string;
   studentName?: string;
   linkedStudentId?: string;
+  teacherId?: string;
+  linkedTeacherId?: string;
   isReadOnly?: boolean;
   canEdit?: boolean;
   canManageUsers?: boolean;
@@ -569,6 +571,8 @@ export function sanitizeUser(user: StoredUser | any): SafeUser {
     studentId: user.studentId || user.linkedStudentId,
     studentName: user.studentName || user.name,
     linkedStudentId: user.linkedStudentId || user.studentId,
+    teacherId: user.teacherId || user.linkedTeacherId,
+    linkedTeacherId: user.linkedTeacherId || user.teacherId,
     isReadOnly: Boolean(user.isReadOnly),
     canEdit: user.canEdit !== undefined ? Boolean(user.canEdit) : true,
     canManageUsers: Boolean(user.canManageUsers),
@@ -663,7 +667,7 @@ export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
     if (mysqlUsers && mysqlUsers.length > 0) {
       mysqlUsers.forEach(u => {
         if (!u || !u.username) return;
-        const cleanName = String(u.username).trim().toUpperCase();
+        const cleanName = normalizeDigits(u.username).trim().toUpperCase();
         usersMap.set(cleanName, {
           ...u,
           username: cleanName

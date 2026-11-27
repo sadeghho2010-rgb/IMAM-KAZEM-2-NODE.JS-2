@@ -1309,11 +1309,74 @@ export async function executeMysqlQuery<T = any>(sql: string, params: any[] = []
 /**
  * Universal repository methods for MySQL
  */
+function normalizeUserDigits(input?: string | number | null): string {
+  if (input === undefined || input === null) return '';
+  return String(input)
+    .replace(/[۰-۹]/g, d => String.fromCharCode(d.charCodeAt(0) - 1728))
+    .replace(/[٠-٩]/g, d => String.fromCharCode(d.charCodeAt(0) - 1584));
+}
+
+function safeJsonParse<T>(val: any, fallback: T): T {
+  if (val === undefined || val === null || val === '') return fallback;
+  if (typeof val !== 'string') return val as T;
+  try {
+    return JSON.parse(val) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function parseMysqlIsActive(val: any): boolean {
+  if (val === undefined || val === null) return true;
+  if (typeof val === 'boolean') return val;
+  if (typeof val === 'number') return val !== 0;
+  const s = String(val).trim().toLowerCase();
+  if (s === '0' || s === 'false' || s === 'no') return false;
+  return Boolean(val);
+}
+
+function mapRawMysqlUserRow(u: any): SystemUserEntity {
+  const parsedData = safeJsonParse<Record<string, any>>(u.data, {});
+  const allowedTabs = safeJsonParse<string[]>(
+    u.allowedTabs,
+    Array.isArray(parsedData?.allowedTabs) ? parsedData.allowedTabs : []
+  );
+  const editableTabs = safeJsonParse<string[]>(
+    u.editableTabs,
+    Array.isArray(parsedData?.editableTabs) ? parsedData.editableTabs : []
+  );
+  const modulePermissions = safeJsonParse<Record<string, string>>(
+    u.modulePermissions,
+    parsedData?.modulePermissions && typeof parsedData.modulePermissions === 'object' ? parsedData.modulePermissions : {}
+  );
+
+  const normalizedUsername = normalizeUserDigits(u.username || parsedData?.username).trim().toUpperCase();
+  const isActive =
+    u.isActive !== undefined && u.isActive !== null
+      ? parseMysqlIsActive(u.isActive)
+      : parseMysqlIsActive(parsedData?.isActive);
+
+  return {
+    ...parsedData,
+    ...u,
+    username: normalizedUsername || u.username,
+    teacherId: u.teacherId || parsedData?.teacherId || parsedData?.linkedTeacherId,
+    linkedTeacherId: u.linkedTeacherId || parsedData?.linkedTeacherId || u.teacherId || parsedData?.teacherId,
+    allowedTabs: Array.isArray(allowedTabs) ? allowedTabs : [],
+    editableTabs: Array.isArray(editableTabs) ? editableTabs : [],
+    modulePermissions: modulePermissions && typeof modulePermissions === 'object' ? modulePermissions : {},
+    isActive,
+    mustChangePassword: Boolean(u.mustChangePassword ?? parsedData?.mustChangePassword)
+  };
+}
+
 export const MysqlRepository = {
   // 1. Fetch User by Username
   async findUserByUsername(username: string): Promise<SystemUserEntity | null> {
     const pool = getMysqlPool();
     if (!pool) return null;
+    const cleanUser = normalizeUserDigits(username).trim().toUpperCase();
+    if (!cleanUser) return null;
 
     try {
       // 1. Query dedicated all_users table first
@@ -1327,7 +1390,7 @@ export const MysqlRepository = {
                 last_login AS lastLogin, data
          FROM all_users
          WHERE UPPER(username) = UPPER(?) LIMIT 1`,
-        [username]
+        [cleanUser]
       );
 
       // 2. Fallback to system_users if not found in all_users
@@ -1342,20 +1405,12 @@ export const MysqlRepository = {
                   last_login AS lastLogin, data
            FROM system_users
            WHERE UPPER(username) = UPPER(?) LIMIT 1`,
-          [username]
+          [cleanUser]
         );
       }
 
       if (rows && rows.length > 0) {
-        const u = rows[0];
-        return {
-          ...u,
-          allowedTabs: typeof u.allowedTabs === 'string' ? JSON.parse(u.allowedTabs) : u.allowedTabs || [],
-          editableTabs: typeof u.editableTabs === 'string' ? JSON.parse(u.editableTabs) : u.editableTabs || [],
-          modulePermissions: typeof u.modulePermissions === 'string' ? JSON.parse(u.modulePermissions) : u.modulePermissions || {},
-          isActive: Boolean(u.isActive),
-          mustChangePassword: Boolean(u.mustChangePassword)
-        };
+        return mapRawMysqlUserRow(rows[0]);
       }
       return null;
     } catch (e) {
@@ -1364,7 +1419,7 @@ export const MysqlRepository = {
     }
   },
 
-  // 2. Fetch All Users (Authoritative from MySQL)
+  // 2. Fetch All Users (Authoritative from MySQL across all_users, system_users, and app_collections)
   async getAllUsers(): Promise<SystemUserEntity[]> {
     const pool = getMysqlPool();
     if (!pool) {
@@ -1375,44 +1430,98 @@ export const MysqlRepository = {
     }
 
     try {
-      let [rows]: any = await pool.execute(
-        `SELECT id, username, password_hash AS passwordHash, password, name, role, role_title AS roleTitle,
-                level, grade_label AS gradeLabel, mentor_id AS mentorId, student_id AS studentId,
-                linked_student_id AS linkedStudentId, teacher_id AS teacherId, avatar_bg AS avatarBg,
-                allowed_tabs AS allowedTabs, editable_tabs AS editableTabs, module_permissions AS modulePermissions,
-                is_active AS isActive, is_read_only AS isReadOnly, can_edit AS canEdit, must_change_password AS mustChangePassword,
-                failed_login_attempts AS failedLoginAttempts, account_locked_until AS accountLockedUntil,
-                last_login AS lastLogin, data, updated_at AS updatedAt
-         FROM all_users ORDER BY level ASC, name ASC`
-      );
+      const mergedByUsername = new Map<string, SystemUserEntity>();
 
-      if (!rows || rows.length === 0) {
+      const addRow = (raw: any, overwrite = false) => {
+        if (!raw) return;
+        const mapped = mapRawMysqlUserRow(raw);
+        const uname = normalizeUserDigits(mapped.username).trim().toUpperCase();
+        if (!uname) return;
+        if (overwrite || !mergedByUsername.has(uname)) {
+          mergedByUsername.set(uname, { ...mapped, username: uname });
+        }
+      };
+
+      // 1. Primary authoritative table: all_users
+      let allUsersRows: any[] = [];
+      try {
+        const [rows]: any = await pool.execute(
+          `SELECT id, username, password_hash AS passwordHash, password, name, role, role_title AS roleTitle,
+                  level, grade_label AS gradeLabel, mentor_id AS mentorId, student_id AS studentId,
+                  linked_student_id AS linkedStudentId, teacher_id AS teacherId, avatar_bg AS avatarBg,
+                  allowed_tabs AS allowedTabs, editable_tabs AS editableTabs, module_permissions AS modulePermissions,
+                  is_active AS isActive, is_read_only AS isReadOnly, can_edit AS canEdit, must_change_password AS mustChangePassword,
+                  failed_login_attempts AS failedLoginAttempts, account_locked_until AS accountLockedUntil,
+                  last_login AS lastLogin, data, updated_at AS updatedAt
+           FROM all_users ORDER BY level ASC, name ASC`
+        );
+        allUsersRows = rows || [];
+      } catch (allErr: any) {
+        if (isConnectionError(allErr)) throw allErr;
+        // Fallback if teacher_id/is_read_only/can_edit columns do not exist in a legacy table
         try {
-          [rows] = await pool.execute(
-            `SELECT id, username, password_hash AS passwordHash, name, role, role_title AS roleTitle,
+          const [rows]: any = await pool.execute(
+            `SELECT id, username, password_hash AS passwordHash, password, name, role, role_title AS roleTitle,
                     level, grade_label AS gradeLabel, mentor_id AS mentorId, student_id AS studentId,
                     linked_student_id AS linkedStudentId, avatar_bg AS avatarBg,
                     allowed_tabs AS allowedTabs, editable_tabs AS editableTabs, module_permissions AS modulePermissions,
                     is_active AS isActive, must_change_password AS mustChangePassword,
                     failed_login_attempts AS failedLoginAttempts, account_locked_until AS accountLockedUntil,
                     last_login AS lastLogin, data, updated_at AS updatedAt
-             FROM system_users ORDER BY level ASC, name ASC`
+             FROM all_users ORDER BY level ASC, name ASC`
           );
-        } catch (sysErr: any) {
-          if (sysErr?.code !== 'ER_NO_SUCH_TABLE') {
-            console.warn('[MySQL getAllUsers system_users fallback notice]:', sysErr?.message || sysErr);
+          allUsersRows = rows || [];
+        } catch (fallbackAllErr: any) {
+          if (isConnectionError(fallbackAllErr)) throw fallbackAllErr;
+          if (fallbackAllErr?.code !== 'ER_NO_SUCH_TABLE') {
+            console.warn('[MySQL getAllUsers all_users notice]:', fallbackAllErr?.message || fallbackAllErr);
           }
         }
       }
+      for (const r of allUsersRows) {
+        addRow(r, true);
+      }
 
-      return (rows || []).map((u: any) => ({
-        ...u,
-        allowedTabs: typeof u.allowedTabs === 'string' ? JSON.parse(u.allowedTabs) : u.allowedTabs || [],
-        editableTabs: typeof u.editableTabs === 'string' ? JSON.parse(u.editableTabs) : u.editableTabs || [],
-        modulePermissions: typeof u.modulePermissions === 'string' ? JSON.parse(u.modulePermissions) : u.modulePermissions || {},
-        isActive: Boolean(u.isActive),
-        mustChangePassword: Boolean(u.mustChangePassword)
-      }));
+      // 2. Merge any legacy/mirror accounts present in system_users (keeps login & users list 100% symmetric)
+      try {
+        const [sysRows]: any = await pool.execute(
+          `SELECT id, username, password_hash AS passwordHash, name, role, role_title AS roleTitle,
+                  level, grade_label AS gradeLabel, mentor_id AS mentorId, student_id AS studentId,
+                  linked_student_id AS linkedStudentId, avatar_bg AS avatarBg,
+                  allowed_tabs AS allowedTabs, editable_tabs AS editableTabs, module_permissions AS modulePermissions,
+                  is_active AS isActive, must_change_password AS mustChangePassword,
+                  failed_login_attempts AS failedLoginAttempts, account_locked_until AS accountLockedUntil,
+                  last_login AS lastLogin, data, updated_at AS updatedAt
+           FROM system_users ORDER BY level ASC, name ASC`
+        );
+        for (const r of (sysRows || [])) {
+          addRow(r, false);
+        }
+      } catch (sysErr: any) {
+        if (isConnectionError(sysErr)) throw sysErr;
+        if (sysErr?.code !== 'ER_NO_SUCH_TABLE') {
+          console.warn('[MySQL getAllUsers system_users notice]:', sysErr?.message || sysErr);
+        }
+      }
+
+      // 3. Merge any document-only accounts from app_collections (all_users / system_users)
+      try {
+        const [colRows]: any = await pool.execute(
+          `SELECT id, data, updated_at AS updatedAt
+           FROM app_collections
+           WHERE collection_name IN ('all_users', 'system_users')`
+        );
+        for (const r of (colRows || [])) {
+          const doc = safeJsonParse<Record<string, any>>(r?.data, {});
+          if (doc && doc.username) {
+            addRow({ ...doc, id: doc.id || r.id, updatedAt: doc.updatedAt || r.updatedAt }, false);
+          }
+        }
+      } catch (colErr: any) {
+        if (isConnectionError(colErr)) throw colErr;
+      }
+
+      return Array.from(mergedByUsername.values());
     } catch (e: any) {
       console.error('[STORAGE_FAILURE] MySQL getAllUsers Error:', e?.message || e);
       if (isConnectionError(e)) {
@@ -1432,23 +1541,27 @@ export const MysqlRepository = {
       return null;
     }
     if (!username) return null;
-    const cleanUser = username.trim().toUpperCase();
+    const cleanUser = normalizeUserDigits(username).trim().toUpperCase();
+    if (!cleanUser) return null;
 
     try {
-      let [rows]: any = await pool.execute(
-        `SELECT id, username, password_hash AS passwordHash, password, name, role, role_title AS roleTitle,
-                level, grade_label AS gradeLabel, mentor_id AS mentorId, student_id AS studentId,
-                linked_student_id AS linkedStudentId, avatar_bg AS avatarBg,
-                allowed_tabs AS allowedTabs, editable_tabs AS editableTabs, module_permissions AS modulePermissions,
-                is_active AS isActive, is_read_only AS isReadOnly, can_edit AS canEdit, must_change_password AS mustChangePassword,
-                failed_login_attempts AS failedLoginAttempts, account_locked_until AS accountLockedUntil,
-                last_login AS lastLogin, data
-         FROM all_users WHERE UPPER(username) = ? LIMIT 1`,
-        [cleanUser]
-      );
-
-      if (!rows || rows.length === 0) {
-        [rows] = await pool.execute(
+      let rows: any = [];
+      try {
+        const [r]: any = await pool.execute(
+          `SELECT id, username, password_hash AS passwordHash, password, name, role, role_title AS roleTitle,
+                  level, grade_label AS gradeLabel, mentor_id AS mentorId, student_id AS studentId,
+                  linked_student_id AS linkedStudentId, teacher_id AS teacherId, avatar_bg AS avatarBg,
+                  allowed_tabs AS allowedTabs, editable_tabs AS editableTabs, module_permissions AS modulePermissions,
+                  is_active AS isActive, is_read_only AS isReadOnly, can_edit AS canEdit, must_change_password AS mustChangePassword,
+                  failed_login_attempts AS failedLoginAttempts, account_locked_until AS accountLockedUntil,
+                  last_login AS lastLogin, data
+           FROM all_users WHERE UPPER(username) = ? LIMIT 1`,
+          [cleanUser]
+        );
+        rows = r || [];
+      } catch (allErr: any) {
+        if (isConnectionError(allErr)) throw allErr;
+        const [r]: any = await pool.execute(
           `SELECT id, username, password_hash AS passwordHash, password, name, role, role_title AS roleTitle,
                   level, grade_label AS gradeLabel, mentor_id AS mentorId, student_id AS studentId,
                   linked_student_id AS linkedStudentId, avatar_bg AS avatarBg,
@@ -1456,22 +1569,54 @@ export const MysqlRepository = {
                   is_active AS isActive, is_read_only AS isReadOnly, can_edit AS canEdit, must_change_password AS mustChangePassword,
                   failed_login_attempts AS failedLoginAttempts, account_locked_until AS accountLockedUntil,
                   last_login AS lastLogin, data
-           FROM system_users WHERE UPPER(username) = ? LIMIT 1`,
+           FROM all_users WHERE UPPER(username) = ? LIMIT 1`,
           [cleanUser]
         );
+        rows = r || [];
+      }
+
+      if (!rows || rows.length === 0) {
+        try {
+          [rows] = await pool.execute(
+            `SELECT id, username, password_hash AS passwordHash, password, name, role, role_title AS roleTitle,
+                    level, grade_label AS gradeLabel, mentor_id AS mentorId, student_id AS studentId,
+                    linked_student_id AS linkedStudentId, avatar_bg AS avatarBg,
+                    allowed_tabs AS allowedTabs, editable_tabs AS editableTabs, module_permissions AS modulePermissions,
+                    is_active AS isActive, is_read_only AS isReadOnly, can_edit AS canEdit, must_change_password AS mustChangePassword,
+                    failed_login_attempts AS failedLoginAttempts, account_locked_until AS accountLockedUntil,
+                    last_login AS lastLogin, data
+             FROM system_users WHERE UPPER(username) = ? LIMIT 1`,
+            [cleanUser]
+          );
+        } catch (sysErr: any) {
+          if (isConnectionError(sysErr)) throw sysErr;
+        }
+      }
+
+      if (!rows || rows.length === 0) {
+        try {
+          const [colRows]: any = await pool.execute(
+            `SELECT id, data, updated_at AS updatedAt
+             FROM app_collections
+             WHERE collection_name IN ('all_users', 'system_users')
+               AND UPPER(JSON_UNQUOTE(JSON_EXTRACT(data, '$.username'))) = ?
+             LIMIT 1`,
+            [cleanUser]
+          );
+          if (colRows && colRows.length > 0) {
+            const doc = safeJsonParse<Record<string, any>>(colRows[0].data, {});
+            if (doc && doc.username) {
+              return mapRawMysqlUserRow({ ...doc, id: doc.id || colRows[0].id });
+            }
+          }
+        } catch (colErr: any) {
+          if (isConnectionError(colErr)) throw colErr;
+        }
       }
 
       if (!rows || rows.length === 0) return null;
 
-      const u = rows[0];
-      return {
-        ...u,
-        allowedTabs: typeof u.allowedTabs === 'string' ? JSON.parse(u.allowedTabs) : u.allowedTabs || [],
-        editableTabs: typeof u.editableTabs === 'string' ? JSON.parse(u.editableTabs) : u.editableTabs || [],
-        modulePermissions: typeof u.modulePermissions === 'string' ? JSON.parse(u.modulePermissions) : u.modulePermissions || {},
-        isActive: Boolean(u.isActive),
-        mustChangePassword: Boolean(u.mustChangePassword)
-      };
+      return mapRawMysqlUserRow(rows[0]);
     } catch (e: any) {
       const errStr = (e?.message || String(e)).toLowerCase();
       const isDbConn = isConnectionError(e) ||

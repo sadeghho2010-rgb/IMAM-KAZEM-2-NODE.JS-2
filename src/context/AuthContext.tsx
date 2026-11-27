@@ -625,92 +625,142 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     };
 
+    const verifyActiveSessionBeforeKickout = async (expectedUsername: string): Promise<boolean> => {
+      try {
+        const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+        if (!token) return false;
+        const res = await fetch(`/api/auth/me?_t=${Date.now()}`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+            'Cache-Control': 'no-cache, no-store, must-revalidate'
+          },
+          cache: 'no-store',
+          credentials: 'include'
+        });
+        if (!isMounted) return true;
+        const currentActive = currentUserRef.current;
+        if (!currentActive || normalizeDigits(currentActive.username).trim().toUpperCase() !== expectedUsername) {
+          return true;
+        }
+        if (res.status === 401 || res.status === 403) {
+          console.warn(`[Security Sync] Server confirmed session invalid (${res.status}) for "${expectedUsername}". Logging out.`);
+          logout();
+          return false;
+        }
+        if (res.ok) {
+          const data = await res.json().catch(() => null);
+          if (data?.authenticated && data?.user) {
+            setCurrentUser(prev => {
+              if (!prev || normalizeDigits(prev.username).trim().toUpperCase() !== expectedUsername) return prev;
+              const mergedVerified: AppUser = {
+                ...prev,
+                ...data.user,
+                username: expectedUsername,
+                allowedTabs: Array.isArray(data.user.allowedTabs) ? data.user.allowedTabs : prev.allowedTabs,
+                editableTabs: Array.isArray(data.user.editableTabs) ? data.user.editableTabs : prev.editableTabs,
+                modulePermissions: data.user.modulePermissions || prev.modulePermissions,
+              };
+              try {
+                localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(mergedVerified));
+              } catch {}
+              return mergedVerified;
+            });
+            return true;
+          }
+        }
+      } catch (e) {
+        console.warn('[Security Sync] verifyActiveSessionBeforeKickout network notice:', e);
+      }
+      return true;
+    };
+
     const processIncomingUsers = (incomingList: Partial<AppUser>[]) => {
       if (!isMounted || !Array.isArray(incomingList) || incomingList.length === 0) return;
       pruneExpiredGuards();
 
-      let mergedResult: AppUser[] = [];
+      const prevSnapshot = usersRef.current || [];
+      const prevById = new Map<string, AppUser>();
+      const prevByUsername = new Map<string, AppUser>();
+      prevSnapshot.forEach(u => {
+        if (u.id) prevById.set(String(u.id), u);
+        if (u.username) prevByUsername.set(normalizeDigits(u.username).trim().toUpperCase(), u);
+      });
+
+      const userById = new Map<string, AppUser>();
+      const userByUsername = new Map<string, AppUser>();
+
+      // AUTHORITATIVE REPLACEMENT: Build strictly from server incomingList (NEVER pre-seed with prev or non-SADEGH defaults)
+      incomingList.forEach((u: Partial<AppUser>) => {
+        if (!u || (!u.username && !u.id)) return;
+        const rawUname = normalizeDigits(String(u.username || u.id || '')).trim().toUpperCase();
+        const rawId = u.id ? String(u.id) : '';
+
+        // Skip users currently undergoing local deletion confirmation
+        if (
+          (rawId && pendingDeletedUsersRef.current.has(rawId)) ||
+          (rawId && pendingDeletedUsersRef.current.has(rawId.toUpperCase())) ||
+          pendingDeletedUsersRef.current.has(rawUname)
+        ) {
+          return;
+        }
+
+        // Preserve local client-side fallback fields only for users that ACTUALLY exist on the server
+        const prevUser = (rawId && prevById.get(rawId)) || prevByUsername.get(rawUname);
+
+        const resolvedId = rawId || prevUser?.id || `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+        const normalizedUser: AppUser = {
+          ...(prevUser || {} as AppUser),
+          ...u,
+          id: resolvedId,
+          username: rawUname,
+          name: u.name || u.fullName || prevUser?.name || rawUname,
+          level: ((Number(u.level) || (u.role === 'teacher' ? 3 : (prevUser?.level || 2))) as UserLevel),
+          role: u.role || prevUser?.role || 'custom',
+          roleTitle: u.roleTitle || prevUser?.roleTitle || (u.role === 'teacher' ? 'استاد مدرسه' : 'کاربر سیستم'),
+          gradeLabel: u.gradeLabel || (u as any).grade || prevUser?.gradeLabel || '',
+          allowedTabs: Array.isArray(u.allowedTabs) ? u.allowedTabs : prevUser?.allowedTabs || ['todos', 'students'],
+          editableTabs: Array.isArray(u.editableTabs) ? u.editableTabs : prevUser?.editableTabs || [],
+          modulePermissions: u.modulePermissions || prevUser?.modulePermissions || {},
+          isReadOnly: u.isReadOnly !== undefined ? u.isReadOnly : (prevUser?.isReadOnly || false),
+          canEdit: u.canEdit !== undefined ? u.canEdit : (prevUser?.canEdit !== undefined ? prevUser.canEdit : true),
+        };
+
+        userById.set(normalizedUser.id, normalizedUser);
+        userByUsername.set(rawUname, normalizedUser);
+      });
+
+      // Apply any unexpired local pending upserts (if not yet reflected or fresher)
+      for (const [uname, entry] of pendingUpsertedUsersRef.current.entries()) {
+        const cleanPendingUname = normalizeDigits(uname).trim().toUpperCase();
+        if (pendingDeletedUsersRef.current.has(cleanPendingUname) || pendingDeletedUsersRef.current.has(entry.user.id)) continue;
+        const serverCopy = userByUsername.get(cleanPendingUname) || userById.get(entry.user.id);
+        const localTs = entry.user.updatedAt ? new Date(entry.user.updatedAt).getTime() : 0;
+        const serverTs = serverCopy?.updatedAt ? new Date(serverCopy.updatedAt).getTime() : 0;
+        if (!serverCopy || localTs > serverTs) {
+          userById.set(entry.user.id, entry.user);
+          userByUsername.set(cleanPendingUname, entry.user);
+        }
+      }
+
+      // Guarantee mandatory SADEGH super admin stays present
+      if (!userByUsername.has('SADEGH')) {
+        const defaultSadegh = DEFAULT_USERS.find(du => du.username.toUpperCase() === 'SADEGH');
+        if (defaultSadegh) {
+          userById.set(defaultSadegh.id, defaultSadegh);
+          userByUsername.set('SADEGH', defaultSadegh);
+        }
+      }
+
+      const mergedResult = Array.from(userById.values());
 
       setUsers(prev => {
-        const prevById = new Map<string, AppUser>();
-        const prevByUsername = new Map<string, AppUser>();
-        prev.forEach(u => {
-          if (u.id) prevById.set(String(u.id), u);
-          if (u.username) prevByUsername.set(u.username.toUpperCase(), u);
-        });
-
-        const userById = new Map<string, AppUser>();
-        const userByUsername = new Map<string, AppUser>();
-
-        // AUTHORITATIVE REPLACEMENT: Build strictly from server incomingList (NEVER pre-seed with prev or non-SADEGH defaults)
-        incomingList.forEach((u: Partial<AppUser>) => {
-          if (!u || (!u.username && !u.id)) return;
-          const rawUname = String(u.username || u.id || '').trim().toUpperCase();
-          const rawId = u.id ? String(u.id) : '';
-
-          // Skip users currently undergoing local deletion confirmation
-          if (
-            (rawId && pendingDeletedUsersRef.current.has(rawId)) ||
-            (rawId && pendingDeletedUsersRef.current.has(rawId.toUpperCase())) ||
-            pendingDeletedUsersRef.current.has(rawUname)
-          ) {
-            return;
-          }
-
-          // Preserve local client-side fallback fields only for users that ACTUALLY exist on the server
-          const prevUser = (rawId && prevById.get(rawId)) || prevByUsername.get(rawUname);
-
-          const resolvedId = rawId || prevUser?.id || `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-          const normalizedUser: AppUser = {
-            ...(prevUser || {} as AppUser),
-            ...u,
-            id: resolvedId,
-            username: rawUname,
-            name: u.name || u.fullName || prevUser?.name || rawUname,
-            level: ((Number(u.level) || (u.role === 'teacher' ? 3 : (prevUser?.level || 2))) as UserLevel),
-            role: u.role || prevUser?.role || 'custom',
-            roleTitle: u.roleTitle || prevUser?.roleTitle || (u.role === 'teacher' ? 'استاد مدرسه' : 'کاربر سیستم'),
-            gradeLabel: u.gradeLabel || (u as any).grade || prevUser?.gradeLabel || '',
-            allowedTabs: Array.isArray(u.allowedTabs) ? u.allowedTabs : prevUser?.allowedTabs || ['todos', 'students'],
-            editableTabs: Array.isArray(u.editableTabs) ? u.editableTabs : prevUser?.editableTabs || [],
-            modulePermissions: u.modulePermissions || prevUser?.modulePermissions || {},
-            isReadOnly: u.isReadOnly !== undefined ? u.isReadOnly : (prevUser?.isReadOnly || false),
-            canEdit: u.canEdit !== undefined ? u.canEdit : (prevUser?.canEdit !== undefined ? prevUser.canEdit : true),
-          };
-
-          userById.set(normalizedUser.id, normalizedUser);
-          userByUsername.set(rawUname, normalizedUser);
-        });
-
-        // Apply any unexpired local pending upserts (if not yet reflected or fresher)
-        for (const [uname, entry] of pendingUpsertedUsersRef.current.entries()) {
-          if (pendingDeletedUsersRef.current.has(uname) || pendingDeletedUsersRef.current.has(entry.user.id)) continue;
-          const serverCopy = userByUsername.get(uname) || userById.get(entry.user.id);
-          const localTs = entry.user.updatedAt ? new Date(entry.user.updatedAt).getTime() : 0;
-          const serverTs = serverCopy?.updatedAt ? new Date(serverCopy.updatedAt).getTime() : 0;
-          if (!serverCopy || localTs > serverTs) {
-            userById.set(entry.user.id, entry.user);
-            userByUsername.set(uname, entry.user);
-          }
-        }
-
-        // Guarantee mandatory SADEGH super admin stays present
-        if (!userByUsername.has('SADEGH')) {
-          const defaultSadegh = DEFAULT_USERS.find(du => du.username.toUpperCase() === 'SADEGH');
-          if (defaultSadegh) {
-            userById.set(defaultSadegh.id, defaultSadegh);
-            userByUsername.set('SADEGH', defaultSadegh);
-          }
-        }
-
-        const merged = Array.from(userById.values());
-        mergedResult = merged;
-
         let hasUsersChanged = false;
         try {
           const oldStr = localStorage.getItem(USERS_STORAGE_KEY);
-          const newStr = JSON.stringify(merged);
-          hasUsersChanged = oldStr !== newStr || prev.length !== merged.length;
+          const newStr = JSON.stringify(mergedResult);
+          hasUsersChanged = oldStr !== newStr || prev.length !== mergedResult.length;
           if (hasUsersChanged) {
             localStorage.setItem(USERS_STORAGE_KEY, newStr);
           }
@@ -719,7 +769,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         // Always keep IndexedDB & fallback_idb_* caches pruned to the authoritative list
-        localDb.replaceAuthoritativeUsersCache(merged).catch((err) => {
+        localDb.replaceAuthoritativeUsersCache(mergedResult).catch((err) => {
           console.warn('[STORAGE_FAILURE] replaceAuthoritativeUsersCache warning:', err);
         });
 
@@ -728,34 +778,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('app_users_updated', { detail: merged }));
+          window.dispatchEvent(new CustomEvent('app_users_updated', { detail: mergedResult }));
         }
-        return merged;
+        return mergedResult;
       });
 
-      // Verify & refresh active user state: if active user was deleted or deactivated on another device, kick out immediately!
+      // Verify & refresh active user state: if active user appears missing or deactivated, double-check via /api/auth/me before logging out!
       const activeUser = currentUserRef.current;
       if (activeUser && activeUser.username) {
-        const activeUname = activeUser.username.toUpperCase();
-        const updatedMatch = (mergedResult.length > 0 ? mergedResult : incomingList).find(
-          u => (u.username || u.id || '').toUpperCase() === activeUname
+        const activeUname = normalizeDigits(activeUser.username).trim().toUpperCase();
+        const activeId = activeUser.id ? String(activeUser.id) : '';
+        const updatedMatch = mergedResult.find(
+          u =>
+            normalizeDigits(u.username || '').trim().toUpperCase() === activeUname ||
+            (activeId && u.id && String(u.id) === activeId)
         );
 
         if (!updatedMatch && activeUname !== 'SADEGH' && !pendingUpsertedUsersRef.current.has(activeUname)) {
-          console.warn(`[Security Sync] Active user "${activeUname}" was deleted on server. Logging out.`);
-          logout();
+          console.warn(`[Security Sync] Active user "${activeUname}" not in /api/auth/users list; verifying via /api/auth/me...`);
+          void verifyActiveSessionBeforeKickout(activeUname);
           return;
         }
 
         if (updatedMatch) {
           if (updatedMatch.isActive === false && activeUname !== 'SADEGH') {
-            console.warn(`[Security Sync] Active user "${activeUname}" was deactivated on server. Logging out.`);
-            logout();
+            console.warn(`[Security Sync] Active user "${activeUname}" marked inactive in list; verifying via /api/auth/me...`);
+            void verifyActiveSessionBeforeKickout(activeUname);
             return;
           }
 
           setCurrentUser(prev => {
-            if (!prev || prev.username.toUpperCase() !== activeUname) return prev;
+            if (!prev || normalizeDigits(prev.username).trim().toUpperCase() !== activeUname) return prev;
             const updated: AppUser = {
               ...prev,
               ...updatedMatch,
@@ -804,6 +857,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
       if (!token) return;
 
+      const requestUsername = currentUserRef.current?.username
+        ? normalizeDigits(currentUserRef.current.username).trim().toUpperCase()
+        : '';
+
       syncInFlightRef.current = true;
       try {
         const makeHeaders = (t: string): Record<string, string> => ({
@@ -851,6 +908,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (res.ok) {
           const result = await res.json();
+          const currentActiveUsername = currentUserRef.current?.username
+            ? normalizeDigits(currentUserRef.current.username).trim().toUpperCase()
+            : '';
+          if (requestUsername && currentActiveUsername && requestUsername !== currentActiveUsername) {
+            // Discard stale sync response started before user switched/logged in
+            return;
+          }
           if (result.success && Array.isArray(result.users) && result.users.length > 0) {
             processIncomingUsers(result.users);
           }
@@ -1188,6 +1252,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setSessionExpiresAt(null);
         }
 
+        currentUserRef.current = mergedUser;
         setCurrentUser(mergedUser);
         try {
           localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(mergedUser));

@@ -109,6 +109,11 @@ export class AuthService {
       throw new AppError('حساب کاربری موقتاً مسدود شده است. با مدیر سامانه تماس بگیرید.', { statusCode: 403 });
     }
 
+    // Check deactivated account cleanly at login (prevents login -> immediate 1s kickout loop)
+    if (user.isActive === false) {
+      throw new AppError('حساب کاربری شما غیرفعال شده است. لطفاً با مدیریت سامانه تماس بگیرید.', { statusCode: 403 });
+    }
+
     // Verify Password (supports legacy plaintext once for lazy migration)
     const storedHashOrPlain = user.passwordHash || user.password || '';
     const tBcryptStart = Date.now();
