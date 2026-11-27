@@ -98,6 +98,7 @@ export default function TeacherPortal() {
   const [loadingState, setLoadingState] = useState<'loading' | 'error' | 'success'>('success');
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [isSavingAll, setIsSavingAll] = useState<boolean>(false);
+  const isSavingAllRef = useRef<boolean>(false);
   const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
 
   // Counseling Evaluation State
@@ -109,28 +110,32 @@ export default function TeacherPortal() {
   const [feedbackSavedStudentId, setFeedbackSavedStudentId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Helper to read local database cache directly into React state
+  const readSnapshotBundle = useCallback(async () => {
+    return Promise.all([
+      localDb.getLocalDocsSnapshot<Teacher>('teachers'),
+      localDb.getLocalDocsSnapshot<Program>('programs'),
+      localDb.getLocalDocsSnapshot<TeacherManualSchedule>('teacher_schedules'),
+      localDb.getLocalDocsSnapshot<Student>('students'),
+      localDb.getLocalDocsSnapshot<Enrollment>('enrollments'),
+      localDb.getLocalDocsSnapshot<CounselingSessionGrade>('counseling_session_grades'),
+      localDb.getLocalDocsSnapshot<AcademicHolidayItem>('academic_holidays'),
+      localDb.getLocalDocsSnapshot<AcademicCalendarPeriod>('academic_calendar_periods')
+    ]);
+  }, []);
+
+  // Helper to read local database cache directly into React state (0ms, zero network side-effects)
   const loadLocalCachedData = useCallback(async () => {
     try {
       const [
-        storedTeachers, 
-        storedPrograms, 
+        storedTeachers,
+        storedPrograms,
         storedManual,
-        storedStudents, 
-        storedEnrollments, 
+        storedStudents,
+        storedEnrollments,
         storedGrades,
         storedHolidays,
         storedPeriods
-      ] = await Promise.all([
-        localDb.getDocs<Teacher>('teachers'),
-        localDb.getDocs<Program>('programs'),
-        localDb.getDocs<TeacherManualSchedule>('teacher_schedules'),
-        localDb.getDocs<Student>('students'),
-        localDb.getDocs<Enrollment>('enrollments'),
-        localDb.getDocs<CounselingSessionGrade>('counseling_session_grades'),
-        localDb.getDocs<AcademicHolidayItem>('academic_holidays'),
-        localDb.getDocs<AcademicCalendarPeriod>('academic_calendar_periods')
-      ]);
+      ] = await readSnapshotBundle();
 
       if (storedTeachers && storedTeachers.length > 0) setTeachers(storedTeachers);
       if (storedPrograms && storedPrograms.length > 0) setPrograms(storedPrograms);
@@ -147,11 +152,11 @@ export default function TeacherPortal() {
       console.warn('Error reading local cache:', e);
       setLoadingState('success');
     }
-  }, []);
+  }, [readSnapshotBundle]);
 
   /**
-   * Eager Cloud Hydration: Non-blocking background sync from server.
-   * Never hangs or freezes the user interface.
+   * Eager Cloud Hydration: Single lightweight HTTP request via /api/data/teacher-portal-init
+   * with automatic fallback to individual collections if needed.
    */
   const syncPortalData = useCallback(async (isManualRefresh = false) => {
     try {
@@ -163,7 +168,7 @@ export default function TeacherPortal() {
       // 1. Immediately populate from local cache so UI is interactive in 0ms
       await loadLocalCachedData();
 
-      // 2. Proactively hydrate key collections from Server / Cloud
+      // 2. Single-request lightweight hydration from Server
       const coreCollections: CollectionName[] = [
         'teachers',
         'programs',
@@ -175,33 +180,29 @@ export default function TeacherPortal() {
         'academic_calendar_periods'
       ];
 
-      const syncPromise = Promise.allSettled(
-        coreCollections.map(col => localDb.syncCollectionFromCloud(col))
-      );
-      const syncTimeout = new Promise(resolve => setTimeout(resolve, 3500));
+      const hydrateTask = (async () => {
+        const initRes = await localDb.syncTeacherPortalInit();
+        if (!initRes.success) {
+          await Promise.allSettled(
+            coreCollections.map(col => localDb.syncCollectionFromCloud(col, isManualRefresh))
+          );
+        }
+      })();
+      const syncTimeout = new Promise(resolve => setTimeout(resolve, 6000));
 
-      await Promise.race([syncPromise, syncTimeout]);
+      await Promise.race([hydrateTask, syncTimeout]);
 
-      // 3. Re-read freshly hydrated records
+      // 3. Re-read freshly hydrated records from snapshot (no extra network GETs)
       const [
-        storedTeachers, 
-        storedPrograms, 
+        storedTeachers,
+        storedPrograms,
         storedManual,
-        storedStudents, 
-        storedEnrollments, 
+        storedStudents,
+        storedEnrollments,
         storedGrades,
         storedHolidays,
         storedPeriods
-      ] = await Promise.all([
-        localDb.getDocs<Teacher>('teachers'),
-        localDb.getDocs<Program>('programs'),
-        localDb.getDocs<TeacherManualSchedule>('teacher_schedules'),
-        localDb.getDocs<Student>('students'),
-        localDb.getDocs<Enrollment>('enrollments'),
-        localDb.getDocs<CounselingSessionGrade>('counseling_session_grades'),
-        localDb.getDocs<AcademicHolidayItem>('academic_holidays'),
-        localDb.getDocs<AcademicCalendarPeriod>('academic_calendar_periods')
-      ]);
+      ] = await readSnapshotBundle();
 
       setTeachers(storedTeachers || []);
       setPrograms(storedPrograms || []);
@@ -223,22 +224,13 @@ export default function TeacherPortal() {
     } finally {
       setIsSyncing(false);
     }
-  }, [loadLocalCachedData]);
+  }, [loadLocalCachedData, readSnapshotBundle]);
 
-  // Initial load and live database listener
+  // Initial load and live database listener (SSE/realtimeSync updates trigger localDb.notify -> snapshot read)
   useEffect(() => {
     syncPortalData();
     const unsub = localDb.subscribe(() => {
-      Promise.all([
-        localDb.getDocs<Teacher>('teachers'),
-        localDb.getDocs<Program>('programs'),
-        localDb.getDocs<TeacherManualSchedule>('teacher_schedules'),
-        localDb.getDocs<Student>('students'),
-        localDb.getDocs<Enrollment>('enrollments'),
-        localDb.getDocs<CounselingSessionGrade>('counseling_session_grades'),
-        localDb.getDocs<AcademicHolidayItem>('academic_holidays'),
-        localDb.getDocs<AcademicCalendarPeriod>('academic_calendar_periods')
-      ]).then(([t, p, m, s, e, g, h, per]) => {
+      readSnapshotBundle().then(([t, p, m, s, e, g, h, per]) => {
         setTeachers(t || []);
         setPrograms(p || []);
         setManualSchedules(m || []);
@@ -250,19 +242,21 @@ export default function TeacherPortal() {
       }).catch(() => {});
     });
 
-    // Fast sync polling (every 3 seconds) for instant sync of counseling evaluations
-    const fastPollTimer = setInterval(() => {
+    // Gentle 60s background fallback sync (SSE handles instant real-time updates; skips while saving or hidden)
+    const fallbackPollTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      if (isSavingAllRef.current) return;
       localDb.syncCollectionFromCloud('counseling_session_grades', true)
-        .then(() => localDb.getDocs<CounselingSessionGrade>('counseling_session_grades'))
+        .then(() => localDb.getLocalDocsSnapshot<CounselingSessionGrade>('counseling_session_grades'))
         .then(g => { if (g) setGrades(g); })
         .catch(() => {});
-    }, 3000);
+    }, 60000);
 
     return () => {
       unsub();
-      clearInterval(fastPollTimer);
+      clearInterval(fallbackPollTimer);
     };
-  }, [syncPortalData, currentUser?.id]);
+  }, [syncPortalData, readSnapshotBundle, currentUser?.id]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -742,14 +736,15 @@ export default function TeacherPortal() {
     }
 
     try {
+      isSavingAllRef.current = true;
       setIsSavingAll(true);
       const teacherName = currentTeacherObj?.fullName || currentTeacherObj?.name || currentUser?.name || 'استاد مشاور';
       const sessionInfo = classSessionDates.find(s => s.date === selectedSessionDate);
       const sessionLabel = `جلسه ${sessionInfo?.sessionNumber || 1}`;
       const normSelectedDate = normalizeShamsiDateStr(selectedSessionDate);
 
-      // Fetch fresh existing grades directly from localDb to guarantee exact match
-      const freshAllGrades = await localDb.getDocs<CounselingSessionGrade>('counseling_session_grades');
+      // Read fresh local snapshot directly (0ms, zero redundant network GET)
+      const freshAllGrades = await localDb.getLocalDocsSnapshot<CounselingSessionGrade>('counseling_session_grades');
 
       const updates: CounselingSessionGrade[] = [];
       const allRemovedIds: string[] = [];
@@ -810,24 +805,26 @@ export default function TeacherPortal() {
         }
       }
 
-      // Fast parallel execution: remove duplicates and save all evaluations concurrently (<400ms instead of 10s!)
+      // 1. Remove any older duplicate records exactly as before
       if (allRemovedIds.length > 0) {
         await Promise.all(allRemovedIds.map(id => localDb.deleteDoc('counseling_session_grades', id).catch(() => {})));
       }
 
       if (updates.length > 0) {
-        await Promise.all(updates.map(doc => localDb.setDoc('counseling_session_grades', doc)));
+        // 2. Single /batch HTTP save (updates localStorage + IndexedDB immediately, and enqueues to syncQueue on failure)
+        const batchRes = await localDb.saveBatchDocs<CounselingSessionGrade>('counseling_session_grades', updates);
+        const savedDocs = batchRes.items && batchRes.items.length > 0 ? batchRes.items : updates;
 
+        // 3. Immediately update React display state & draft map so UI reflects changes right away
         const removedSet = new Set(allRemovedIds);
-        const updatedIds = new Set(updates.map(u => u.id));
+        const updatedIds = new Set(savedDocs.map(u => u.id));
         setGrades(prev => [
           ...prev.filter(g => !removedSet.has(g.id) && !updatedIds.has(g.id)),
-          ...updates
+          ...savedDocs
         ]);
 
-        // Directly merge newly saved updates into localDraftGrades so UI immediately holds the new scores and never reverts!
         const newDrafts: Record<string, { participationScore?: CounselingScore | ''; researchScore?: CounselingScore | ''; counselorFeedback?: string }> = {};
-        updates.forEach(u => {
+        savedDocs.forEach(u => {
           newDrafts[u.studentId] = {
             participationScore: u.participationScore || '',
             researchScore: u.researchScore || '',
@@ -839,8 +836,6 @@ export default function TeacherPortal() {
           ...newDrafts
         }));
 
-        await localDb.flushSyncQueue();
-
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'counseling_session_grades' } }));
           window.dispatchEvent(new CustomEvent('collection_change_counseling_session_grades'));
@@ -849,14 +844,29 @@ export default function TeacherPortal() {
           } catch (e) {}
         }
 
-        const msg = `✓ ارزیابی و ویرایش نمرات ${toPersianDigits(updates.length)} طلبه برای جلسه ${normSelectedDate} با موفقیت در دیتابیس ثبت شد.`;
-        showToast(msg);
-        emitSaveConfirmation({
-          variant: 'success',
-          title: 'ثبت ارزیابی اساتید با موفقیت انجام شد',
-          message: msg,
-          subtitle: `کلاس «${activeCounselingCourse.title}» — ذخیره قطعی در سرور`
-        });
+        if (batchRes.success) {
+          // Non-blocking flush of any remaining offline queue items so unrelated items never delay spinner
+          void localDb.flushSyncQueue().catch(() => {});
+
+          const msg = `✓ ارزیابی و ویرایش نمرات ${toPersianDigits(savedDocs.length)} طلبه برای جلسه ${normSelectedDate} با موفقیت در دیتابیس ثبت شد.`;
+          showToast(msg);
+          emitSaveConfirmation({
+            variant: 'success',
+            title: 'ثبت ارزیابی اساتید با موفقیت انجام شد',
+            message: msg,
+            subtitle: `کلاس «${activeCounselingCourse.title}» — ذخیره قطعی در سرور`
+          });
+        } else {
+          const errDetail = batchRes.message || 'خطا در ارتباط با سرور';
+          const queuedMsg = `خطا در ارسال مستقیم به سرور (${errDetail})؛ نمرات ${toPersianDigits(savedDocs.length)} طلبه در صف آفلاین ذخیره شد و به‌محض پایداری ارتباط خودکار ثبت می‌شود.`;
+          showToast(queuedMsg);
+          emitSaveConfirmation({
+            variant: 'error',
+            title: 'خطا در ثبت مستقیم نمرات در سرور (ذخیره در صف آفلاین انجام شد)',
+            message: queuedMsg,
+            subtitle: `کلاس «${activeCounselingCourse.title}» — هیچ نمره‌ای از دست نرفته است`
+          });
+        }
       } else {
         const warnMsg = 'لطفاً نمره حداقل یک طلبه را تعیین فرمایید و سپس ثبت را بزنید.';
         showToast(warnMsg);
@@ -875,6 +885,7 @@ export default function TeacherPortal() {
         message: 'خطا در ثبت و ذخیره ارزیابی‌ها در دیتابیس.'
       });
     } finally {
+      isSavingAllRef.current = false;
       setIsSavingAll(false);
     }
   };

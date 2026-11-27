@@ -37,8 +37,8 @@ function normalizeSearchText(value?: string | null): string {
     .toLowerCase();
 }
 
-function isTeacherLevel3User(user: AppUser): boolean {
-  if (user.level !== 3) return false;
+function isTeacherAccount(user: AppUser): boolean {
+  if (!user) return false;
   if (user.role === 'teacher' || Boolean(user.linkedTeacherId) || Boolean(user.teacherId)) return true;
   if (
     user.role === 'student' ||
@@ -48,7 +48,22 @@ function isTeacherLevel3User(user: AppUser): boolean {
   ) {
     return false;
   }
-  return typeof user.roleTitle === 'string' && user.roleTitle.includes('استاد');
+  const lvl = Number(user.level);
+  if (lvl === 1) return false;
+  return lvl === 3 && typeof user.roleTitle === 'string' && (user.roleTitle.includes('استاد') || user.roleTitle.includes('مدرس'));
+}
+
+function isStudentAccount(user: AppUser): boolean {
+  if (!user || isTeacherAccount(user)) return false;
+  if (
+    user.role === 'student' ||
+    user.role === 'class_representative' ||
+    Boolean(user.linkedStudentId) ||
+    Boolean(user.studentId)
+  ) {
+    return true;
+  }
+  return Number(user.level) === 3;
 }
 
 export default function UserCredentialsSettings() {
@@ -60,7 +75,7 @@ export default function UserCredentialsSettings() {
   const [searchTerm, setSearchTerm] = useState('');
   const [withoutAccountSearch, setWithoutAccountSearch] = useState('');
   const [selectedLevel, setSelectedLevel] = useState<number | 'all'>('all');
-  const [level3SubFilter, setLevel3SubFilter] = useState<'all' | 'teachers' | 'students'>('all');
+  const [userTypeFilter, setUserTypeFilter] = useState<'all' | 'teachers' | 'students'>('all');
   const [showPasswordMap, setShowPasswordMap] = useState<Record<string, boolean>>({});
 
   // Modal states
@@ -342,15 +357,15 @@ export default function UserCredentialsSettings() {
     }
   };
 
-  const level3UsersCount = users.filter(u => u.level === 3).length;
-  const level3TeachersCount = users.filter(isTeacherLevel3User).length;
-  const level3StudentsCount = users.filter(u => u.level === 3 && !isTeacherLevel3User(u)).length;
+  const level3UsersCount = users.filter(u => Number(u.level) === 3).length;
+  const teachersCount = users.filter(isTeacherAccount).length;
+  const studentsCount = users.filter(isStudentAccount).length;
 
   // Filtered Users
   const filteredUsers = users.filter(u => {
-    if (selectedLevel !== 'all' && u.level !== selectedLevel) return false;
-    if (selectedLevel === 3 && level3SubFilter === 'teachers' && !isTeacherLevel3User(u)) return false;
-    if (selectedLevel === 3 && level3SubFilter === 'students' && isTeacherLevel3User(u)) return false;
+    if (selectedLevel !== 'all' && Number(u.level) !== selectedLevel) return false;
+    if (userTypeFilter === 'teachers' && !isTeacherAccount(u)) return false;
+    if (userTypeFilter === 'students' && !isStudentAccount(u)) return false;
     const term = normalizeSearchText(searchTerm);
     if (term) {
       return [u.name, u.fullName, u.username, u.roleTitle, u.nationalId, u.phone, u.gradeLabel].some(field =>
@@ -412,25 +427,25 @@ export default function UserCredentialsSettings() {
                 <span>حساب‌های کاربری فعال در سیستم ({filteredUsers.length})</span>
               </h2>
 
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto flex-wrap">
                 <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-bold w-full sm:w-auto">
                   <button
                     type="button"
                     onClick={() => {
                       setSelectedLevel('all');
-                      setLevel3SubFilter('all');
+                      setUserTypeFilter('all');
                     }}
-                    className={cn("flex-1 px-3 py-1 rounded-lg transition-all cursor-pointer", selectedLevel === 'all' ? "bg-white text-slate-900 shadow-xs" : "text-slate-500")}
+                    className={cn("flex-1 px-3 py-1 rounded-lg transition-all cursor-pointer", selectedLevel === 'all' && userTypeFilter === 'all' ? "bg-white text-slate-900 shadow-xs" : "text-slate-500")}
                   >
-                    همه
+                    همه ({users.length})
                   </button>
                   <button
                     type="button"
                     onClick={() => {
                       setSelectedLevel(1);
-                      setLevel3SubFilter('all');
+                      setUserTypeFilter('all');
                     }}
-                    className={cn("flex-1 px-3 py-1 rounded-lg transition-all cursor-pointer", selectedLevel === 1 ? "bg-white text-indigo-700 shadow-xs" : "text-slate-500")}
+                    className={cn("flex-1 px-3 py-1 rounded-lg transition-all cursor-pointer", selectedLevel === 1 && userTypeFilter === 'all' ? "bg-white text-indigo-700 shadow-xs" : "text-slate-500")}
                   >
                     سطح ۱
                   </button>
@@ -438,9 +453,9 @@ export default function UserCredentialsSettings() {
                     type="button"
                     onClick={() => {
                       setSelectedLevel(2);
-                      setLevel3SubFilter('all');
+                      setUserTypeFilter('all');
                     }}
-                    className={cn("flex-1 px-3 py-1 rounded-lg transition-all cursor-pointer", selectedLevel === 2 ? "bg-white text-amber-700 shadow-xs" : "text-slate-500")}
+                    className={cn("flex-1 px-3 py-1 rounded-lg transition-all cursor-pointer", selectedLevel === 2 && userTypeFilter === 'all' ? "bg-white text-amber-700 shadow-xs" : "text-slate-500")}
                   >
                     سطح ۲
                   </button>
@@ -448,9 +463,9 @@ export default function UserCredentialsSettings() {
                     type="button"
                     onClick={() => {
                       setSelectedLevel(3);
-                      setLevel3SubFilter('all');
+                      setUserTypeFilter('all');
                     }}
-                    className={cn("flex-1 px-3 py-1 rounded-lg transition-all cursor-pointer", selectedLevel === 3 && level3SubFilter === 'all' ? "bg-white text-emerald-700 shadow-xs" : "text-slate-500")}
+                    className={cn("flex-1 px-3 py-1 rounded-lg transition-all cursor-pointer", selectedLevel === 3 && userTypeFilter === 'all' ? "bg-white text-emerald-700 shadow-xs" : "text-slate-500")}
                   >
                     سطح ۳ ({level3UsersCount})
                   </button>
@@ -460,28 +475,41 @@ export default function UserCredentialsSettings() {
                   <button
                     type="button"
                     onClick={() => {
-                      setSelectedLevel(3);
-                      setLevel3SubFilter('teachers');
+                      setSelectedLevel('all');
+                      setUserTypeFilter('all');
                     }}
                     className={cn(
                       "flex-1 px-2.5 py-1 rounded-lg transition-all cursor-pointer whitespace-nowrap",
-                      selectedLevel === 3 && level3SubFilter === 'teachers' ? "bg-white text-indigo-700 shadow-xs" : "text-slate-600 hover:text-indigo-800"
+                      selectedLevel === 'all' && userTypeFilter === 'all' ? "bg-white text-slate-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
                     )}
                   >
-                    فقط اساتید ({level3TeachersCount})
+                    همه کاربران
                   </button>
                   <button
                     type="button"
                     onClick={() => {
-                      setSelectedLevel(3);
-                      setLevel3SubFilter('students');
+                      setSelectedLevel('all');
+                      setUserTypeFilter('teachers');
                     }}
                     className={cn(
                       "flex-1 px-2.5 py-1 rounded-lg transition-all cursor-pointer whitespace-nowrap",
-                      selectedLevel === 3 && level3SubFilter === 'students' ? "bg-white text-emerald-700 shadow-xs" : "text-slate-600 hover:text-emerald-800"
+                      userTypeFilter === 'teachers' ? "bg-white text-indigo-700 shadow-xs" : "text-slate-600 hover:text-indigo-800"
                     )}
                   >
-                    فقط طلاب ({level3StudentsCount})
+                    فقط اساتید ({teachersCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedLevel('all');
+                      setUserTypeFilter('students');
+                    }}
+                    className={cn(
+                      "flex-1 px-2.5 py-1 rounded-lg transition-all cursor-pointer whitespace-nowrap",
+                      userTypeFilter === 'students' ? "bg-white text-emerald-700 shadow-xs" : "text-slate-600 hover:text-emerald-800"
+                    )}
+                  >
+                    فقط طلاب ({studentsCount})
                   </button>
                 </div>
               </div>

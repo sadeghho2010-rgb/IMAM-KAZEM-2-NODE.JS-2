@@ -425,7 +425,9 @@ function AppContent() {
   // When user logs in or role changes, sync server collections into IndexedDB cache and default to dashboard
   useEffect(() => {
     if (currentUser) {
-      localDb.loadAllCollectionsFromServer().catch(() => {});
+      if (currentUser.role !== 'teacher') {
+        localDb.loadAllCollectionsFromServer().catch(() => {});
+      }
 
       if (!activeTab || activeTab === 'todos') {
         setActiveTab('dashboard');

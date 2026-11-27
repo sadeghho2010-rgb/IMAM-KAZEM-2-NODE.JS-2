@@ -50,6 +50,35 @@ const ALL_MODULES: { id: AppModuleId; label: string; group: string }[] = [
   { id: 'user-management', label: 'مدیریت کاربران و دسترسی‌ها', group: 'امنیت و تنظیمات' },
 ];
 
+function isTeacherAccount(user: AppUser): boolean {
+  if (!user) return false;
+  if (user.role === 'teacher' || Boolean(user.linkedTeacherId) || Boolean(user.teacherId)) return true;
+  if (
+    user.role === 'student' ||
+    user.role === 'class_representative' ||
+    Boolean(user.linkedStudentId) ||
+    Boolean(user.studentId)
+  ) {
+    return false;
+  }
+  const lvl = Number(user.level);
+  if (lvl === 1) return false;
+  return lvl === 3 && typeof user.roleTitle === 'string' && (user.roleTitle.includes('استاد') || user.roleTitle.includes('مدرس'));
+}
+
+function isStudentAccount(user: AppUser): boolean {
+  if (!user || isTeacherAccount(user)) return false;
+  if (
+    user.role === 'student' ||
+    user.role === 'class_representative' ||
+    Boolean(user.linkedStudentId) ||
+    Boolean(user.studentId)
+  ) {
+    return true;
+  }
+  return Number(user.level) === 3;
+}
+
 export default function UserManagement() {
   const { 
     currentUser, 
@@ -63,6 +92,7 @@ export default function UserManagement() {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterLevel, setFilterLevel] = useState<'all' | '1' | '2' | '3'>('all');
+  const [userTypeFilter, setUserTypeFilter] = useState<'all' | 'teachers' | 'students'>('all');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<AppUser | null>(null);
   const [activeViewMode, setActiveViewMode] = useState<'users' | 'sections'>('users');
@@ -322,15 +352,22 @@ export default function UserManagement() {
     }
   };
 
+  const teachersCount = users.filter(isTeacherAccount).length;
+  const studentsCount = users.filter(isStudentAccount).length;
+
   const filteredUsers = users.filter(u => {
     const matchesSearch = 
       u.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      u.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      u.roleTitle.toLowerCase().includes(searchTerm.toLowerCase());
+      (u.fullName || u.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (u.roleTitle || '').toLowerCase().includes(searchTerm.toLowerCase());
 
-    const matchesLevel = filterLevel === 'all' || u.level === parseInt(filterLevel);
+    const matchesLevel = filterLevel === 'all' || Number(u.level) === parseInt(filterLevel);
+    const matchesType =
+      userTypeFilter === 'all' ||
+      (userTypeFilter === 'teachers' && isTeacherAccount(u)) ||
+      (userTypeFilter === 'students' && isStudentAccount(u));
 
-    return matchesSearch && matchesLevel;
+    return matchesSearch && matchesLevel && matchesType;
   });
 
   return (
@@ -478,22 +515,61 @@ export default function UserManagement() {
             />
           </div>
 
-          <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-            <span className="text-xs text-slate-400 font-bold ml-1 shrink-0">فیلتر سطح:</span>
-            {(['all', '1', '2', '3'] as const).map((lvl) => (
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+              <span className="text-xs text-slate-400 font-bold ml-1 shrink-0">فیلتر سطح:</span>
+              {(['all', '1', '2', '3'] as const).map((lvl) => (
+                <button
+                  key={lvl}
+                  type="button"
+                  onClick={() => {
+                    setFilterLevel(lvl);
+                    setUserTypeFilter('all');
+                  }}
+                  className={cn(
+                    "px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer",
+                    filterLevel === lvl && userTypeFilter === 'all'
+                      ? "bg-slate-900 text-white shadow-xs" 
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  )}
+                >
+                  {lvl === 'all' ? 'همه سطوح' : `سطح ${lvl}`}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-1.5 bg-emerald-50/70 border border-emerald-200/70 p-1 rounded-xl text-xs font-bold">
               <button
-                key={lvl}
-                onClick={() => setFilterLevel(lvl)}
+                type="button"
+                onClick={() => {
+                  setFilterLevel('all');
+                  setUserTypeFilter('teachers');
+                }}
                 className={cn(
-                  "px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0",
-                  filterLevel === lvl 
-                    ? "bg-slate-900 text-white shadow-xs" 
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  "px-2.5 py-1 rounded-lg transition-all cursor-pointer whitespace-nowrap",
+                  userTypeFilter === 'teachers'
+                    ? "bg-white text-indigo-700 shadow-xs"
+                    : "text-slate-600 hover:text-indigo-800"
                 )}
               >
-                {lvl === 'all' ? 'همه سطوح' : `سطح ${lvl}`}
+                فقط اساتید ({teachersCount})
               </button>
-            ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterLevel('all');
+                  setUserTypeFilter('students');
+                }}
+                className={cn(
+                  "px-2.5 py-1 rounded-lg transition-all cursor-pointer whitespace-nowrap",
+                  userTypeFilter === 'students'
+                    ? "bg-white text-emerald-700 shadow-xs"
+                    : "text-slate-600 hover:text-emerald-800"
+                )}
+              >
+                فقط طلاب ({studentsCount})
+              </button>
+            </div>
           </div>
         </div>
 

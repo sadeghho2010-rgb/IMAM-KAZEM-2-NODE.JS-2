@@ -933,7 +933,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       : null;
 
     if (token) {
-      syncWithServer(true);
+      if (currentUserRef.current?.role !== 'teacher') {
+        syncWithServer(true);
+      }
       realtimeSync.start();
     } else {
       realtimeSync.stop();
@@ -984,10 +986,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('storage', handleStorageEvent);
 
-    // 4. Periodic background sync every 8 seconds (only when authenticated)
+    // 4. Periodic background sync every 8 seconds (only when authenticated; skipped for isolated teacher portal unless realtimeSync fires)
     const syncInterval = setInterval(() => {
       const currentToken = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
-      if (currentToken) {
+      if (currentToken && currentUserRef.current?.role !== 'teacher') {
         syncWithServer();
       }
     }, 8000);
@@ -1007,7 +1009,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     if (currentUser) {
       realtimeSync.start();
-      syncWithServerRef.current?.(true);
+      if (currentUser.role !== 'teacher') {
+        syncWithServerRef.current?.(true);
+      }
     }
   }, [currentUser?.username]);
 

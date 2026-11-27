@@ -14,7 +14,7 @@ import {
   isClassRepresentativeUser,
   resolveAuthoritativeStudentIdentity
 } from '../lib/serverDataApi';
-import { verifyAccessToken, logServerAudit, fetchAllUsersFromStorage } from '../lib/serverAuth';
+import { verifyAccessToken, logServerAudit, fetchAllUsersFromStorage, fetchUserByUsername } from '../lib/serverAuth';
 import { MysqlRepository } from '../lib/databaseAbstraction';
 import { logger } from '../lib/logger';
 
@@ -43,10 +43,16 @@ setInterval(() => {
 const getEnrichedCallerUser = async (decoded: any): Promise<any> => {
   if (!decoded) return null;
   try {
+    const cleanUser = String(decoded.username || '').trim().toUpperCase();
+    if (cleanUser) {
+      const fastMatched = await fetchUserByUsername(cleanUser);
+      if (fastMatched) {
+        return { ...fastMatched, ...decoded };
+      }
+    }
     const allUsers = await fetchAllUsersFromStorage();
-    const cleanUser = String(decoded.username || '').toUpperCase();
     const uId = String(decoded.userId || decoded.id || '');
-    const matched = allUsers.find(u => 
+    const matched = allUsers.find(u =>
       (cleanUser && u.username && u.username.toUpperCase() === cleanUser) ||
       (uId && u.id === uId)
     );
@@ -287,6 +293,60 @@ router.get('/data/bootstrap', async (req: Request, res: Response) => {
     return res.status(500).json({
       success: false,
       message: 'خطا در بارگذاری همزمان تمام داده‌های سامانه'
+    });
+  }
+});
+
+// GET /api/data/teacher-portal-init - Lightweight single-request hydration exclusively for TeacherPortal
+router.get('/data/teacher-portal-init', async (req: Request, res: Response) => {
+  const token = extractToken(req);
+  if (!token) {
+    return res.status(401).json({ success: false, message: 'احراز هویت الزامی است.' });
+  }
+
+  const verification = verifyAccessToken(token);
+  if (!verification.valid || !verification.decoded) {
+    return res.status(401).json({ success: false, message: 'نشست کاربری معتبر نیست یا منقضی شده است.' });
+  }
+
+  const callerUser = await getEnrichedCallerUser(verification.decoded);
+  if (!callerUser || (callerUser.role !== 'teacher' && Number(callerUser.level) > 2)) {
+    return res.status(403).json({ success: false, message: 'دسترسی به این بخش مجاز نیست.' });
+  }
+
+  try {
+    // Batch 1 warms shared metadata (programs, teacher_schedules, enrollments) before Batch 2 queries students context
+    const batch1Cols = ['teachers', 'programs', 'teacher_schedules', 'enrollments'];
+    const batch2Cols = ['students', 'counseling_session_grades', 'academic_holidays', 'academic_calendar_periods'];
+
+    const data: Record<string, any[]> = {};
+    const runBatch = async (cols: string[]) => {
+      const results = await Promise.all(
+        cols.map(async (col) => {
+          const authCheck = authorizeCollectionAccess(callerUser, col, 'read');
+          if (!authCheck.allowed) return { col, items: [] };
+          const items = await serverQueryCollection(col, callerUser);
+          return { col, items };
+        })
+      );
+      for (const { col, items } of results) {
+        data[col] = items;
+      }
+    };
+
+    await runBatch(batch1Cols);
+    await runBatch(batch2Cols);
+
+    return res.status(200).json({
+      success: true,
+      timestamp: Date.now(),
+      data
+    });
+  } catch (error: any) {
+    logger.error('[Teacher Portal Init Error]:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'خطا در بارگذاری اطلاعات پنل اساتید'
     });
   }
 });
@@ -670,6 +730,11 @@ router.post('/data/:collection/batch', async (req: Request, res: Response) => {
     return res.status(403).json({ success: false, message: authCheck.reason || 'دسترسی غیرمجاز' });
   }
 
+  const idempotencyKey = String(req.headers['x-idempotency-key'] || req.body?._idempotencyKey || '').trim();
+  if (idempotencyKey && processedIdempotencyKeys.has(idempotencyKey)) {
+    return res.json(processedIdempotencyKeys.get(idempotencyKey)!.result);
+  }
+
   const { items } = req.body || {};
   if (!Array.isArray(items)) {
     return res.status(400).json({ success: false, message: 'آیتم‌ها باید آرایه‌ای باشند.' });
@@ -690,10 +755,28 @@ router.post('/data/:collection/batch', async (req: Request, res: Response) => {
       safeItems.push(studentCheck.data);
     }
 
+    const savedItems: any[] = [];
     for (const safeItem of safeItems) {
-      await serverSaveDoc(collection, safeItem, callerUser);
+      const saveRes = await serverSaveDoc(collection, safeItem, callerUser);
+      if (!saveRes.success) {
+        return res.status(saveRes.notFound ? 404 : 500).json({
+          success: false,
+          message: saveRes.error || 'خطا در ذخیره‌سازی دسته‌ای اطلاعات.'
+        });
+      }
+      savedItems.push(saveRes.item || safeItem);
     }
-    return res.json({ success: true, count: safeItems.length });
+
+    const resPayload = {
+      success: true,
+      count: savedItems.length,
+      items: savedItems,
+      timestamp: Date.now()
+    };
+    if (idempotencyKey) {
+      processedIdempotencyKeys.set(idempotencyKey, { timestamp: Date.now(), result: resPayload });
+    }
+    return res.json(resPayload);
   } catch (err) {
     logger.error(`Error batch saving ${collection}:`, err);
     return res.status(500).json({ success: false, message: 'خطا در ذخیره دسته‌ای اطلاعات.' });

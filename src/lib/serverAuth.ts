@@ -650,51 +650,72 @@ if (!isMysqlConfigured) {
 
 // =================== Server-Side User Storage and Migration ===================
 
-export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
-  const usersMap = new Map<string, StoredUser>();
+let cachedAllUsers: StoredUser[] | null = null;
+let cachedAllUsersAt = 0;
+let inFlightAllUsersPromise: Promise<StoredUser[]> | null = null;
+const ALL_USERS_CACHE_TTL_MS = 20000; // 20s TTL with immediate invalidation on mutations
 
-  if (isMysqlConfigured) {
-    // MySQL is the SINGLE authoritative source of truth.
-    // Never merge stale serverMemoryUsers or data/system_users.json back on top of MySQL rows.
-    let mysqlUsers: any[] = [];
-    try {
-      mysqlUsers = await MysqlRepository.getAllUsers();
-    } catch (mErr: any) {
-      console.error('[STORAGE_FAILURE] MySQL fetchAllUsersFromStorage error:', mErr?.message || mErr);
-      throw mErr;
-    }
+export function invalidateAllUsersCache() {
+  cachedAllUsers = null;
+  cachedAllUsersAt = 0;
+}
 
-    if (mysqlUsers && mysqlUsers.length > 0) {
-      mysqlUsers.forEach(u => {
-        if (!u || !u.username) return;
-        const cleanName = normalizeDigits(u.username).trim().toUpperCase();
-        usersMap.set(cleanName, {
-          ...u,
-          username: cleanName
-        } as StoredUser);
-      });
+export async function fetchAllUsersFromStorage(options: { bypassCache?: boolean } = {}): Promise<StoredUser[]> {
+  const now = Date.now();
+  if (!options.bypassCache && cachedAllUsers && (now - cachedAllUsersAt) < ALL_USERS_CACHE_TTL_MS) {
+    return cachedAllUsers.map(u => ({ ...u }));
+  }
+
+  if (!options.bypassCache && inFlightAllUsersPromise) {
+    const shared = await inFlightAllUsersPromise;
+    return shared.map(u => ({ ...u }));
+  }
+
+  const loadPromise = (async (): Promise<StoredUser[]> => {
+    const usersMap = new Map<string, StoredUser>();
+
+    if (isMysqlConfigured) {
+      // MySQL is the SINGLE authoritative source of truth.
+      // Never merge stale serverMemoryUsers or data/system_users.json back on top of MySQL rows.
+      let mysqlUsers: any[] = [];
+      try {
+        mysqlUsers = await MysqlRepository.getAllUsers();
+      } catch (mErr: any) {
+        console.error('[STORAGE_FAILURE] MySQL fetchAllUsersFromStorage error:', mErr?.message || mErr);
+        throw mErr;
+      }
+
+      if (mysqlUsers && mysqlUsers.length > 0) {
+        mysqlUsers.forEach(u => {
+          if (!u || !u.username) return;
+          const cleanName = normalizeDigits(u.username).trim().toUpperCase();
+          usersMap.set(cleanName, {
+            ...u,
+            username: cleanName
+          } as StoredUser);
+        });
+      } else {
+        // Fresh empty DB bootstrap fallback
+        DEFAULT_SERVER_USERS.forEach(u => usersMap.set(u.username.toUpperCase(), { ...u }));
+        loadUsersFromFile().forEach(u => {
+          if (u && u.username) {
+            const uname = u.username.toUpperCase();
+            usersMap.set(uname, { ...usersMap.get(uname), ...u, username: uname });
+          }
+        });
+      }
     } else {
-      // Fresh empty DB bootstrap fallback
       DEFAULT_SERVER_USERS.forEach(u => usersMap.set(u.username.toUpperCase(), { ...u }));
+      serverMemoryUsers.forEach((u, uname) => usersMap.set(uname, { ...u }));
       loadUsersFromFile().forEach(u => {
         if (u && u.username) {
           const uname = u.username.toUpperCase();
-          usersMap.set(uname, { ...usersMap.get(uname), ...u, username: uname });
+          if (serverMemoryUsers.has(uname) || serverMemoryUsers.size === 0) {
+            usersMap.set(uname, { ...usersMap.get(uname), ...u, username: uname });
+          }
         }
       });
     }
-  } else {
-    DEFAULT_SERVER_USERS.forEach(u => usersMap.set(u.username.toUpperCase(), { ...u }));
-    serverMemoryUsers.forEach((u, uname) => usersMap.set(uname, { ...u }));
-    loadUsersFromFile().forEach(u => {
-      if (u && u.username) {
-        const uname = u.username.toUpperCase();
-        if (serverMemoryUsers.has(uname) || serverMemoryUsers.size === 0) {
-          usersMap.set(uname, { ...usersMap.get(uname), ...u, username: uname });
-        }
-      }
-    });
-  }
 
   // Bootstrap initial super_admin ONLY if no active super_admin account exists in storage
   const hasActiveSuperAdmin = Array.from(usersMap.values()).some(
@@ -764,20 +785,37 @@ export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
     }
   }
 
-  // Strictly synchronize & prune in-memory caches to match the authoritative set (prevents deleted user resurrection)
-  if (isMysqlConfigured) {
-    serverMemoryUsers.clear();
-    usersMap.forEach((u, uname) => {
-      serverMemoryUsers.set(uname, { ...u });
-    });
-    for (const cachedKey of Array.from(userCache.keys())) {
-      if (!usersMap.has(cachedKey)) {
-        userCache.delete(cachedKey);
+    // Strictly synchronize & prune in-memory caches to match the authoritative set (prevents deleted user resurrection)
+    if (isMysqlConfigured) {
+      serverMemoryUsers.clear();
+      usersMap.forEach((u, uname) => {
+        serverMemoryUsers.set(uname, { ...u });
+      });
+      for (const cachedKey of Array.from(userCache.keys())) {
+        if (!usersMap.has(cachedKey)) {
+          userCache.delete(cachedKey);
+        }
       }
     }
+
+    const resultList = Array.from(usersMap.values());
+    cachedAllUsers = resultList.map(u => ({ ...u }));
+    cachedAllUsersAt = Date.now();
+    return resultList;
+  })();
+
+  if (!options.bypassCache) {
+    inFlightAllUsersPromise = loadPromise;
   }
 
-  return Array.from(usersMap.values());
+  try {
+    const res = await loadPromise;
+    return res.map(u => ({ ...u }));
+  } finally {
+    if (inFlightAllUsersPromise === loadPromise) {
+      inFlightAllUsersPromise = null;
+    }
+  }
 }
 
 // In-Memory User Cache with sliding TTL (5 minutes) for instant O(1) logins
@@ -853,6 +891,7 @@ export function evictUserFromMemoryStores(userIdOrUsername: string) {
   if (!clean) return;
   serverMemoryUsers.delete(clean);
   invalidateUserCache(clean);
+  invalidateAllUsersCache();
   for (const [uname, u] of Array.from(serverMemoryUsers.entries())) {
     if (
       u.id === userIdOrUsername ||
@@ -877,6 +916,9 @@ export async function saveUserToStorage(user: StoredUser, options: { isLogin?: b
   if (cleanId) {
     serverMemoryUsers.set(cleanId, normalizedUser);
     userCache.set(cleanId, { user: normalizedUser, cachedAt: Date.now() });
+  }
+  if (!options.isLogin) {
+    invalidateAllUsersCache();
   }
 
   const performAsyncStorage = async () => {
@@ -927,6 +969,7 @@ export async function deleteUserFromStorage(userIdOrUsername: string): Promise<v
 
   serverMemoryUsers.delete(clean);
   invalidateUserCache(clean);
+  invalidateAllUsersCache();
   for (const [uname, u] of Array.from(serverMemoryUsers.entries())) {
     if (
       u.id === raw ||
@@ -966,6 +1009,7 @@ export async function deleteUserFromStorage(userIdOrUsername: string): Promise<v
 }
 
 export async function purgeAllStudentUsersFromStorage(): Promise<number> {
+  invalidateAllUsersCache();
   let removedCount = 0;
   const isStudentAccount = (u: Partial<StoredUser> | null | undefined): boolean => {
     if (!u) return false;

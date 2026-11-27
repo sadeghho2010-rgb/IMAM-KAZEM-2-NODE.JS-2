@@ -378,7 +378,7 @@ export class AuthController {
         return res.status(400).json({ success: false, message: 'شناسه کاربر الزامی است.' });
       }
 
-      const users = await fetchAllUsersFromStorage();
+      const users = await fetchAllUsersFromStorage({ bypassCache: true });
       let existing = users.find(u => 
         u.id === target || 
         u.username.toUpperCase() === String(target).toUpperCase() ||
@@ -505,7 +505,7 @@ export class AuthController {
         return res.status(400).json({ success: false, message: 'شناسه کاربر الزامی است.' });
       }
 
-      const users = await fetchAllUsersFromStorage();
+      const users = await fetchAllUsersFromStorage({ bypassCache: true });
       const targetUpper = String(target).trim().toUpperCase();
       const usernameUpper = username ? String(username).trim().toUpperCase() : '';
       const targetUser = users.find(u =>
@@ -599,7 +599,7 @@ export class AuthController {
         return res.status(400).json({ success: false, message: 'شناسه کاربر و رمز عبور جدید الزامی است.' });
       }
 
-      const users = await fetchAllUsersFromStorage();
+      const users = await fetchAllUsersFromStorage({ bypassCache: true });
       const existing = users.find(u => u.id === targetUserId || u.username.toUpperCase() === String(targetUserId).toUpperCase());
 
       if (!existing) {
@@ -644,7 +644,7 @@ export class AuthController {
         return res.status(400).json({ success: false, message: 'شناسه کاربر یا نام کاربری الزامی است.' });
       }
 
-      const users = await fetchAllUsersFromStorage();
+      const users = await fetchAllUsersFromStorage({ bypassCache: true });
       const existing = users.find(u => 
         u.id === target || 
         u.username.toUpperCase() === String(target).toUpperCase()
@@ -692,7 +692,7 @@ export class AuthController {
         return res.status(400).json({ success: false, message: 'رمز عبور فعلی و رمز عبور جدید الزامی است.' });
       }
 
-      const users = await fetchAllUsersFromStorage();
+      const users = await fetchAllUsersFromStorage({ bypassCache: true });
       const existing = users.find(u => u.id === caller.userId || u.username.toUpperCase() === caller.username.toUpperCase());
 
       if (!existing) {
