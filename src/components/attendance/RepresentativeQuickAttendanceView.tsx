@@ -299,38 +299,76 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
     if (!currentProgram) return [];
 
     const programGrade = currentProgram.grade || '';
+    const programIdStr = String(currentProgram.id);
 
-    // If explicit enrollments exist in course_enrollments
-    const directEnrollments = enrollments.filter(e => 
-      String(e.programId) === String(currentProgram.id) && 
-      e.status !== 'deleted' && 
-      e.status !== 'inactive'
-    );
-    const directEnrolledIds = new Set(directEnrollments.map(e => String(e.studentId)));
+    // Collect student IDs from all enrollment sources
+    const studentIdSet = new Set<string>();
 
-    // If program has studentIds array
-    const programStudentIds = new Set(
-      Array.isArray((currentProgram as any).studentIds) 
-        ? (currentProgram as any).studentIds.map(String) 
-        : []
-    );
-
-    const hasProgramStudentIds = Array.isArray((currentProgram as any).studentIds);
-    const hasExplicitProgramConfig = Boolean((currentProgram as any).hasExplicitEnrollment) || (hasProgramStudentIds && (currentProgram as any).studentIds.length > 0);
-
-    return students.filter(s => {
-      if (s.status === 'deleted' || (s as any).isDeleted) return false;
-      const sIdStr = String(s.id);
-      if (hasExplicitProgramConfig) {
-        return programStudentIds.has(sIdStr);
+    // 1. enrollments & course_enrollments matching programId
+    const combinedEnrollments = [...(enrollments || [])];
+    combinedEnrollments.forEach(e => {
+      if (!e || e.status === 'deleted' || e.status === 'inactive') return;
+      const pId = String(e.programId || e.program_id || '').trim();
+      if (pId === programIdStr) {
+        const sid = String(e.studentId || e.student_id || '').trim();
+        if (sid) studentIdSet.add(sid);
       }
-      if (directEnrolledIds.size > 0) {
-        return directEnrolledIds.has(sIdStr);
+    });
+
+    // 2. studentIds array on program
+    let rawStudentIds: any[] = [];
+    if (Array.isArray((currentProgram as any).studentIds)) {
+      rawStudentIds = (currentProgram as any).studentIds;
+    } else if (typeof (currentProgram as any).studentIds === 'string' && (currentProgram as any).studentIds.trim().startsWith('[')) {
+      try {
+        const parsed = JSON.parse((currentProgram as any).studentIds);
+        if (Array.isArray(parsed)) rawStudentIds = parsed;
+      } catch {}
+    }
+    rawStudentIds.forEach(sid => {
+      if (sid) studentIdSet.add(String(sid).trim());
+    });
+
+    // 3. representativeStudentIds if assigned
+    if (Array.isArray((currentProgram as any).representativeStudentIds)) {
+      (currentProgram as any).representativeStudentIds.forEach((sid: any) => {
+        if (sid) studentIdSet.add(String(sid).trim());
+      });
+    }
+
+    const matchedMap = new Map<string, any>();
+    students.forEach(s => {
+      if (!s || s.status === 'deleted' || (s as any).isDeleted) return;
+      const sId = String(s.id || '').trim();
+      const sCode = String(s.studentCode || '').trim();
+      const sNat = String(s.nationalId || '').trim();
+
+      const isMatch =
+        studentIdSet.has(sId) ||
+        (sCode && studentIdSet.has(sCode)) ||
+        (sNat && studentIdSet.has(sNat)) ||
+        Array.from(studentIdSet).some(tId => {
+          const tLower = tId.toLowerCase();
+          return tLower === sId.toLowerCase() || (sCode && tLower === sCode.toLowerCase()) || (tLower === sNat.toLowerCase());
+        });
+
+      if (isMatch) {
+        matchedMap.set(sId || sCode || sNat, s);
       }
-      // Grade-based matching fallback
-      if (!programGrade || programGrade === 'همه پایه‌ها' || programGrade === 'همه') return true;
-      return s.grade === programGrade;
-    }).sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || ''), 'fa'));
+    });
+
+    let result = Array.from(matchedMap.values());
+
+    const hasExplicitConfig = Boolean((currentProgram as any).hasExplicitEnrollment) || studentIdSet.size > 0;
+    if (!hasExplicitConfig && result.length === 0) {
+      if (!programGrade || programGrade === 'همه پایه‌ها' || programGrade === 'همه') {
+        result = students.filter(s => s && s.status !== 'deleted' && !(s as any).isDeleted);
+      } else {
+        result = students.filter(s => s && s.status !== 'deleted' && !(s as any).isDeleted && String(s.grade || '').trim() === String(programGrade).trim());
+      }
+    }
+
+    return result.sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || ''), 'fa'));
   }, [currentProgram, students, enrollments]);
 
   // Load existing session log for the selected program and date
