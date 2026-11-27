@@ -2311,9 +2311,7 @@ export async function serverQueryCollection(collection: string, user?: any): Pro
       context = { enrolledStudentIds, teacherGrades };
     } else if (isStudentLevelUser(user)) {
       const repCtx = await resolveRepresentativeProgramContext(user, rawItems);
-      if (repCtx.isRepresentative) {
-        context = { ...repCtx };
-      }
+      context = { ...repCtx };
     }
   }
 
