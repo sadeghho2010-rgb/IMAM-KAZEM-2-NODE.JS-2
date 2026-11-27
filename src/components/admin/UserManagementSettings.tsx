@@ -52,6 +52,20 @@ const TAB_CATEGORIES = [
   'مدیریت سیستم و امنیت'
 ] as const;
 
+function isTeacherLevel3User(user: AppUser): boolean {
+  if (user.level !== 3) return false;
+  if (user.role === 'teacher' || Boolean(user.linkedTeacherId) || Boolean(user.teacherId)) return true;
+  if (
+    user.role === 'student' ||
+    user.role === 'class_representative' ||
+    Boolean(user.linkedStudentId) ||
+    Boolean(user.studentId)
+  ) {
+    return false;
+  }
+  return typeof user.roleTitle === 'string' && user.roleTitle.includes('استاد');
+}
+
 export default function UserManagementSettings() {
   const { users, currentUser, addUser, updateUser, deleteUser, resetDefaultUsers } = useAuth();
   
@@ -59,6 +73,7 @@ export default function UserManagementSettings() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [filterLevel, setFilterLevel] = useState<number | 'all'>('all');
+  const [level3SubFilter, setLevel3SubFilter] = useState<'all' | 'teachers' | 'students'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -347,8 +362,14 @@ export default function UserManagementSettings() {
     showToast(`تنظیمات دسترسی و منوی کاربر «${formData.name}» با موفقیت ذخیره و فوراً اعمال گردید.`);
   };
 
+  const level3UsersCount = users.filter(u => u.level === 3).length;
+  const level3TeachersCount = users.filter(isTeacherLevel3User).length;
+  const level3StudentsCount = users.filter(u => u.level === 3 && !isTeacherLevel3User(u)).length;
+
   const filteredUsers = users.filter(u => {
     if (filterLevel !== 'all' && u.level !== filterLevel) return false;
+    if (filterLevel === 3 && level3SubFilter === 'teachers' && !isTeacherLevel3User(u)) return false;
+    if (filterLevel === 3 && level3SubFilter === 'students' && isTeacherLevel3User(u)) return false;
     const term = normalizeSearchText(searchTerm);
     if (term) {
       const searchableFields = [
@@ -470,15 +491,37 @@ export default function UserManagementSettings() {
         </div>
 
         <div className="bg-gradient-to-br from-emerald-50/80 to-white p-4 rounded-3xl border border-emerald-100 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-black text-emerald-900">سطح ۳: طلاب و نمایندگان</span>
-            <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold">
-              {users.filter(u => u.level === 3).length} کاربر
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-black text-emerald-900">سطح ۳: طلاب، نمایندگان و اساتید</span>
+            <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold shrink-0">
+              {level3UsersCount} کاربر
             </span>
           </div>
           <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">
-            پرتال اختصاصی طلاب و نماینده‌های کلاس با دسترسی به برنامه، حضور و غیاب و مطالعه.
+            پرتال اختصاصی طلاب، نمایندگان کلاس و اساتید مدرسه با دسترسی‌های سطح ۳.
           </p>
+          <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
+            <button
+              type="button"
+              onClick={() => {
+                setFilterLevel(3);
+                setLevel3SubFilter('students');
+              }}
+              className="px-2 py-0.5 rounded-lg bg-emerald-100/80 hover:bg-emerald-200/80 text-emerald-800 text-[10px] font-bold transition-colors cursor-pointer"
+            >
+              طلاب و نمایندگان: {level3StudentsCount}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFilterLevel(3);
+                setLevel3SubFilter('teachers');
+              }}
+              className="px-2 py-0.5 rounded-lg bg-indigo-100/80 hover:bg-indigo-200/80 text-indigo-800 text-[10px] font-bold transition-colors cursor-pointer"
+            >
+              اساتید سطح ۳: {level3TeachersCount}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -510,41 +553,104 @@ export default function UserManagementSettings() {
 
         {/* Level Filter & Live Results Count */}
         <div className="flex items-center justify-between sm:justify-end gap-2.5 flex-wrap">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-bold text-slate-500 shrink-0">فیلتر سطح:</span>
             <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-bold">
               <button
                 type="button"
-                onClick={() => setFilterLevel('all')}
+                onClick={() => {
+                  setFilterLevel('all');
+                  setLevel3SubFilter('all');
+                }}
                 className={cn("px-3 py-1 rounded-lg transition-all cursor-pointer", filterLevel === 'all' ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-800")}
               >
                 همه ({users.length})
               </button>
               <button
                 type="button"
-                onClick={() => setFilterLevel(1)}
+                onClick={() => {
+                  setFilterLevel(1);
+                  setLevel3SubFilter('all');
+                }}
                 className={cn("px-3 py-1 rounded-lg transition-all cursor-pointer", filterLevel === 1 ? "bg-white text-indigo-700 shadow-xs" : "text-slate-500 hover:text-slate-800")}
               >
                 سطح ۱
               </button>
               <button
                 type="button"
-                onClick={() => setFilterLevel(2)}
+                onClick={() => {
+                  setFilterLevel(2);
+                  setLevel3SubFilter('all');
+                }}
                 className={cn("px-3 py-1 rounded-lg transition-all cursor-pointer", filterLevel === 2 ? "bg-white text-amber-700 shadow-xs" : "text-slate-500 hover:text-slate-800")}
               >
                 سطح ۲
               </button>
               <button
                 type="button"
-                onClick={() => setFilterLevel(3)}
-                className={cn("px-3 py-1 rounded-lg transition-all cursor-pointer", filterLevel === 3 ? "bg-white text-emerald-700 shadow-xs" : "text-slate-500 hover:text-slate-800")}
+                onClick={() => {
+                  setFilterLevel(3);
+                  setLevel3SubFilter('all');
+                }}
+                className={cn("px-3 py-1 rounded-lg transition-all cursor-pointer", filterLevel === 3 && level3SubFilter === 'all' ? "bg-white text-emerald-700 shadow-xs" : "text-slate-500 hover:text-slate-800")}
               >
-                سطح ۳
+                سطح ۳ ({level3UsersCount})
               </button>
             </div>
           </div>
 
-          {(searchTerm || filterLevel !== 'all') && (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-xs font-bold text-slate-500 shrink-0">تفکیک سطح ۳:</span>
+            <div className="flex bg-emerald-50/70 border border-emerald-200/70 p-1 rounded-xl text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterLevel(3);
+                  setLevel3SubFilter('all');
+                }}
+                className={cn(
+                  "px-2.5 py-1 rounded-lg transition-all cursor-pointer",
+                  filterLevel === 3 && level3SubFilter === 'all'
+                    ? "bg-white text-emerald-800 shadow-xs"
+                    : "text-slate-600 hover:text-emerald-900"
+                )}
+              >
+                همه سطح ۳
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterLevel(3);
+                  setLevel3SubFilter('teachers');
+                }}
+                className={cn(
+                  "px-2.5 py-1 rounded-lg transition-all cursor-pointer",
+                  filterLevel === 3 && level3SubFilter === 'teachers'
+                    ? "bg-white text-indigo-700 shadow-xs"
+                    : "text-slate-600 hover:text-indigo-800"
+                )}
+              >
+                فقط اساتید ({level3TeachersCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterLevel(3);
+                  setLevel3SubFilter('students');
+                }}
+                className={cn(
+                  "px-2.5 py-1 rounded-lg transition-all cursor-pointer",
+                  filterLevel === 3 && level3SubFilter === 'students'
+                    ? "bg-white text-emerald-700 shadow-xs"
+                    : "text-slate-600 hover:text-emerald-800"
+                )}
+              >
+                فقط طلاب ({level3StudentsCount})
+              </button>
+            </div>
+          </div>
+
+          {(searchTerm || filterLevel !== 'all' || level3SubFilter !== 'all') && (
             <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-xl shrink-0">
               {filteredUsers.length} نتیجه از {users.length}
             </span>
@@ -577,12 +683,13 @@ export default function UserManagementSettings() {
                       <p className="text-xs font-bold text-slate-600">
                         کاربری مطابق با عبارت «{searchTerm}» یا فیلتر انتخاب‌شده یافت نشد.
                       </p>
-                      {(searchTerm || filterLevel !== 'all') && (
+                      {(searchTerm || filterLevel !== 'all' || level3SubFilter !== 'all') && (
                         <button
                           type="button"
                           onClick={() => {
                             setSearchTerm('');
                             setFilterLevel('all');
+                            setLevel3SubFilter('all');
                           }}
                           className="mt-1 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
                         >
