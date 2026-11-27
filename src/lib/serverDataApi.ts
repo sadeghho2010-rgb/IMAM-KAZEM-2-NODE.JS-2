@@ -1547,6 +1547,8 @@ interface RepresentativeProgramContext {
   repProgramIdSet: Set<string>;
   repProgramTitleSet: Set<string>;
   repEnrolledStudentIds: Set<string>;
+  repAllowedGrades: Set<string>;
+  repAllowAllGrades: boolean;
 }
 
 function isAttendanceDocInRepresentativeScope(doc: any, context?: any): boolean {
@@ -1588,11 +1590,13 @@ async function resolveRepresentativeProgramContext(
   user: any,
   preloadedStudents?: any[]
 ): Promise<RepresentativeProgramContext> {
-  const [programs, enrollments, studentsList] = await Promise.all([
+  const [programs, enrollments, courseEnrollments, studentsList] = await Promise.all([
     fetchRawCollectionData('programs'),
     fetchRawCollectionData('enrollments'),
+    fetchRawCollectionData('course_enrollments'),
     preloadedStudents ? Promise.resolve(preloadedStudents) : fetchRawCollectionData('students')
   ]);
+  const allEnrollments = [...(enrollments || []), ...(courseEnrollments || [])];
 
   const candidateIdsRaw = [
     user.id,
@@ -1612,19 +1616,23 @@ async function resolveRepresentativeProgramContext(
   const uId = normalizeRepClean(String(user.id || user.userId || ''));
   const uName = normalizeRepClean(String(user.username || ''));
 
-  const matchedStudent = (studentsList || []).find((s: any) => {
-    if (!s) return false;
-    const sId = normalizeRepClean(String(s.id || ''));
-    const sCode = normalizeRepClean(String(s.studentCode || ''));
-    const sNat = normalizeRepClean(String(s.nationalId || s.nationalCode || ''));
-    const sName = normalizeRepClean(String(s.name || s.fullName || ''));
-
-    if (uSid && (sId === uSid || sCode === uSid || sNat === uSid)) return true;
-    if (uId && sId === uId) return true;
-    if (uName && (sCode === uName || sNat === uName || sId === uName)) return true;
-    if (candidateNamesRaw.length > 0 && candidateNamesRaw.some(cn => cn && sName && (sName.includes(cn) || cn.includes(sName)))) return true;
-    return false;
-  });
+  const matchedStudent =
+    (studentsList || []).find((s: any) => {
+      if (!s) return false;
+      const sId = normalizeRepClean(String(s.id || ''));
+      const sCode = normalizeRepClean(String(s.studentCode || ''));
+      const sNat = normalizeRepClean(String(s.nationalId || s.nationalCode || ''));
+      return Boolean(
+        (uSid && (sId === uSid || sCode === uSid || sNat === uSid)) ||
+        (uId && sId === uId) ||
+        (uName && (sCode === uName || sNat === uName || sId === uName))
+      );
+    }) ||
+    (studentsList || []).find((s: any) => {
+      if (!s) return false;
+      const sName = normalizeRepClean(String(s.name || s.fullName || ''));
+      return Boolean(candidateNamesRaw.length > 0 && candidateNamesRaw.some(cn => cn && sName && (sName.includes(cn) || cn.includes(sName))));
+    });
 
   const candidateIdsSet = new Set<string>(candidateIdsRaw);
   const candidateNamesSet = new Set<string>(candidateNamesRaw);
@@ -1684,7 +1692,8 @@ async function resolveRepresentativeProgramContext(
   // Legacy fallback ONLY when repPrograms is empty and user is explicitly designated representative for legacy classes without representativeStudentIds
   if (repPrograms.length === 0 && (user.role === 'class_representative' || user.roleTitle?.includes('نماینده') || managedClassId)) {
     const enrolledProgIds = new Set<string>();
-    (enrollments || []).forEach((enr: any) => {
+    allEnrollments.forEach((enr: any) => {
+      if (!enr || enr.status === 'deleted' || enr.status === 'inactive') return;
       const sid = normalizeRepClean(String(enr.studentId || enr.student_id || ''));
       if (sid && candidateIds.includes(sid)) {
         enrolledProgIds.add(String(enr.programId || enr.program_id || '').trim());
@@ -1692,7 +1701,7 @@ async function resolveRepresentativeProgramContext(
     });
     activeProgs.forEach((p: any) => {
       const pid = String(p.id).trim();
-      const hasExplicitRepArray = Array.isArray(p.representativeStudentIds);
+      const hasExplicitRepArray = Array.isArray(p.representativeStudentIds) && p.representativeStudentIds.length > 0;
       if (!hasExplicitRepArray) {
         if (
           enrolledProgIds.has(pid) ||
@@ -1708,15 +1717,74 @@ async function resolveRepresentativeProgramContext(
   if (managedClassId) repProgramIdSet.add(managedClassId);
   repProgramIdsFromUser.forEach(pid => repProgramIdSet.add(pid));
 
+  const effectiveRepProgramsMap = new Map<string, any>();
+  repPrograms.forEach((p: any) => {
+    if (p && p.id) effectiveRepProgramsMap.set(String(p.id).trim(), p);
+  });
+  activeProgs.forEach((p: any) => {
+    const pid = String(p.id || '').trim();
+    if (pid && repProgramIdSet.has(pid) && !effectiveRepProgramsMap.has(pid)) {
+      effectiveRepProgramsMap.set(pid, p);
+    }
+  });
+  const effectiveRepPrograms = Array.from(effectiveRepProgramsMap.values());
+
   const repProgramTitleSet = new Set<string>(
-    repPrograms
+    effectiveRepPrograms
       .map((p: any) => normalizeRepClean(String(p.title || '')))
       .filter(Boolean)
   );
 
   const repEnrolledStudentIds = new Set<string>();
+  const repAllowedGrades = new Set<string>();
+  let repAllowAllGrades = false;
+
   if (repProgramIdSet.size > 0) {
-    (enrollments || []).forEach((enr: any) => {
+    effectiveRepPrograms.forEach((p: any) => {
+      const pid = String(p.id || '').trim();
+
+      let rawStudentIds: any[] = [];
+      if (Array.isArray(p.studentIds)) {
+        rawStudentIds = p.studentIds;
+      } else if (typeof p.studentIds === 'string' && p.studentIds.trim().startsWith('[')) {
+        try {
+          const parsed = JSON.parse(p.studentIds);
+          if (Array.isArray(parsed)) rawStudentIds = parsed;
+        } catch {}
+      }
+      const programStudentIds = rawStudentIds.map(sid => String(sid || '').trim()).filter(Boolean);
+      programStudentIds.forEach(sid => repEnrolledStudentIds.add(sid));
+
+      if (Array.isArray(p.representativeStudentIds)) {
+        p.representativeStudentIds.forEach((sid: any) => {
+          if (sid) repEnrolledStudentIds.add(String(sid).trim());
+        });
+      }
+
+      const directEnrolls = allEnrollments.filter((enr: any) => {
+        if (!enr || enr.status === 'deleted' || enr.status === 'inactive') return false;
+        return String(enr.programId || enr.program_id || '').trim() === pid;
+      });
+      directEnrolls.forEach((enr: any) => {
+        const sid = String(enr.studentId || enr.student_id || '').trim();
+        if (sid) repEnrolledStudentIds.add(sid);
+      });
+
+      const hasExplicitProgramConfig = Boolean(p.hasExplicitEnrollment) || programStudentIds.length > 0;
+      if (!hasExplicitProgramConfig && directEnrolls.length === 0) {
+        const pGrade = String(p.grade || '').trim();
+        if (!pGrade || pGrade === 'همه پایه‌ها' || pGrade === 'همه') {
+          repAllowAllGrades = true;
+        } else {
+          repAllowedGrades.add(pGrade);
+          repAllowedGrades.add(normalizeRepClean(pGrade));
+        }
+      }
+    });
+
+    // Also capture enrollments matching repProgramIdSet directly
+    allEnrollments.forEach((enr: any) => {
+      if (!enr || enr.status === 'deleted' || enr.status === 'inactive') return;
       const pId = String(enr.programId || enr.program_id || '').trim();
       if (repProgramIdSet.has(pId)) {
         const sid = String(enr.studentId || enr.student_id || '').trim();
@@ -1724,24 +1792,21 @@ async function resolveRepresentativeProgramContext(
       }
     });
 
-    repPrograms.forEach((p: any) => {
-      if (Array.isArray(p.studentIds)) {
-        p.studentIds.forEach((sid: any) => {
-          if (sid) repEnrolledStudentIds.add(String(sid).trim());
-        });
-      }
-      if (Array.isArray(p.representativeStudentIds)) {
-        p.representativeStudentIds.forEach((sid: any) => {
-          if (sid) repEnrolledStudentIds.add(String(sid).trim());
-        });
-      }
-    });
-
+    const repIdNormSet = new Set<string>(
+      Array.from(repEnrolledStudentIds).map(id => normalizeRepClean(id)).filter(Boolean)
+    );
     (studentsList || []).forEach((s: any) => {
       const sid = String(s.id || '').trim();
-      if (repEnrolledStudentIds.has(sid)) {
-        if (s.studentCode) repEnrolledStudentIds.add(String(s.studentCode).trim().toUpperCase());
-        if (s.nationalId) repEnrolledStudentIds.add(String(s.nationalId).trim());
+      const sCode = String(s.studentCode || '').trim();
+      const sNat = String(s.nationalId || s.nationalCode || '').trim();
+      if (
+        (sid && (repEnrolledStudentIds.has(sid) || repIdNormSet.has(normalizeRepClean(sid)))) ||
+        (sCode && (repEnrolledStudentIds.has(sCode) || repIdNormSet.has(normalizeRepClean(sCode)))) ||
+        (sNat && (repEnrolledStudentIds.has(sNat) || repIdNormSet.has(normalizeRepClean(sNat))))
+      ) {
+        if (sid) repEnrolledStudentIds.add(sid);
+        if (sCode) repEnrolledStudentIds.add(sCode.toUpperCase());
+        if (sNat) repEnrolledStudentIds.add(sNat);
       }
     });
 
@@ -1753,7 +1818,9 @@ async function resolveRepresentativeProgramContext(
     repProgramIds: Array.from(repProgramIdSet),
     repProgramIdSet,
     repProgramTitleSet,
-    repEnrolledStudentIds
+    repEnrolledStudentIds,
+    repAllowedGrades,
+    repAllowAllGrades
   };
 }
 
@@ -1821,7 +1888,19 @@ export function canUserReadDoc(user: any, collection: string, doc: any, context?
         }
       }
 
-      // 3. If representative is assigned a specific grade
+      // 3. If any represented class uses grade-based enrollment (no explicit studentIds / enrollments)
+      if (context?.repAllowAllGrades) {
+        return true;
+      }
+      if (context?.repAllowedGrades && context.repAllowedGrades.size > 0) {
+        const docGrade = String(doc.grade || '').trim();
+        const docGradeNorm = normalizeRepClean(docGrade);
+        if (docGrade && (context.repAllowedGrades.has(docGrade) || context.repAllowedGrades.has(docGradeNorm))) {
+          return true;
+        }
+      }
+
+      // 4. If representative user account is assigned a specific grade
       const repGrade = user.gradeLabel || user.grade;
       if (repGrade && String(doc.grade || '').trim() === String(repGrade).trim()) {
         return true;
