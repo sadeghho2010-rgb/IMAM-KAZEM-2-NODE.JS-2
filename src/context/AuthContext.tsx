@@ -851,15 +851,104 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return null;
     };
 
+    const isStudentLevelPortalUser = (u: AppUser | null | undefined): boolean => {
+      if (!u) return false;
+      if (u.role === 'teacher') return false;
+      if (Number(u.level) === 1 || Number(u.level) === 2) return false;
+      return u.role === 'student' || u.role === 'class_representative' || Number(u.level) === 3;
+    };
+
+    let lastMeSyncAt = 0;
+
     // 1. Direct Server API fetch with strict cache-busting & 401 refresh support
     const syncWithServer = async (force = false) => {
       if (syncInFlightRef.current && !force) return;
       const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
       if (!token) return;
 
-      const requestUsername = currentUserRef.current?.username
-        ? normalizeDigits(currentUserRef.current.username).trim().toUpperCase()
+      const activeSnapshot = currentUserRef.current;
+      const requestUsername = activeSnapshot?.username
+        ? normalizeDigits(activeSnapshot.username).trim().toUpperCase()
         : '';
+
+      // Lightweight session & permission check for Level-3 students / class representatives (avoids downloading full users table)
+      if (isStudentLevelPortalUser(activeSnapshot)) {
+        const nowTs = Date.now();
+        if (!force && nowTs - lastMeSyncAt < 15000) {
+          return;
+        }
+        syncInFlightRef.current = true;
+        try {
+          const makeMeHeaders = (t: string): Record<string, string> => ({
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${t}`,
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
+          });
+          let meRes = await fetch(`/api/auth/me?_t=${Date.now()}`, {
+            method: 'GET',
+            headers: makeMeHeaders(token),
+            cache: 'no-store',
+            credentials: 'include'
+          });
+          if (meRes.status === 401) {
+            const freshToken = await refreshAccessToken();
+            if (freshToken) {
+              meRes = await fetch(`/api/auth/me?_t=${Date.now()}`, {
+                method: 'GET',
+                headers: makeMeHeaders(freshToken),
+                cache: 'no-store',
+                credentials: 'include'
+              });
+            }
+          }
+          lastMeSyncAt = Date.now();
+          if (!isMounted) return;
+          const currentActive = currentUserRef.current;
+          const currentActiveUname = currentActive?.username
+            ? normalizeDigits(currentActive.username).trim().toUpperCase()
+            : '';
+          if (requestUsername && currentActiveUname && requestUsername !== currentActiveUname) {
+            return;
+          }
+          if (meRes.status === 401 || meRes.status === 403) {
+            logout();
+            return;
+          }
+          if (meRes.ok) {
+            const data = await meRes.json().catch(() => null);
+            if (data?.authenticated && data?.user) {
+              if (data.user.isActive === false && requestUsername !== 'SADEGH') {
+                logout();
+                return;
+              }
+              setCurrentUser(prev => {
+                if (!prev || normalizeDigits(prev.username).trim().toUpperCase() !== requestUsername) return prev;
+                const updated: AppUser = {
+                  ...prev,
+                  ...data.user,
+                  username: requestUsername,
+                  allowedTabs: Array.isArray(data.user.allowedTabs) ? data.user.allowedTabs : prev.allowedTabs,
+                  editableTabs: Array.isArray(data.user.editableTabs) ? data.user.editableTabs : prev.editableTabs,
+                  modulePermissions: data.user.modulePermissions || prev.modulePermissions,
+                };
+                try {
+                  const oldStr = localStorage.getItem(CURRENT_USER_KEY);
+                  const newStr = JSON.stringify(updated);
+                  if (oldStr === newStr) return prev;
+                  localStorage.setItem(CURRENT_USER_KEY, newStr);
+                } catch {}
+                return updated;
+              });
+            }
+          }
+        } catch (e) {
+          console.warn('[USER_SYNC_WARNING] student /me sync failed:', e);
+        } finally {
+          syncInFlightRef.current = false;
+        }
+        return;
+      }
 
       syncInFlightRef.current = true;
       try {
@@ -933,7 +1022,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       : null;
 
     if (token) {
-      if (currentUserRef.current?.role !== 'teacher') {
+      if (currentUserRef.current?.role !== 'teacher' && !isStudentLevelPortalUser(currentUserRef.current)) {
         syncWithServer(true);
       }
       realtimeSync.start();
@@ -943,12 +1032,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // 2. Real-time Synchronization Listener (SSE & MySQL Event Bus + BroadcastChannel)
     const unsubscribeRealtime = realtimeSync.subscribe((evt) => {
-      if (
+      const isUserCol =
         evt.collection === 'system_users' ||
         evt.collection === 'all_users' ||
-        evt.collection === 'users' ||
-        evt.collection === 'students'
-      ) {
+        evt.collection === 'users';
+      if (isUserCol || (!isStudentLevelPortalUser(currentUserRef.current) && evt.collection === 'students')) {
         syncWithServer(true);
       }
     });
@@ -956,7 +1044,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const handleFocus = () => {
       const currentToken = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
       if (currentToken) {
-        syncWithServer(true);
+        syncWithServer(!isStudentLevelPortalUser(currentUserRef.current));
       }
     };
 
@@ -986,12 +1074,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('storage', handleStorageEvent);
 
-    // 4. Periodic background sync every 8 seconds (only when authenticated; skipped for isolated teacher portal unless realtimeSync fires)
+    // 4. Periodic background sync (8s for admin/staff; 45s lightweight /me check for student/rep; skipped for teachers)
     const syncInterval = setInterval(() => {
       const currentToken = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
-      if (currentToken && currentUserRef.current?.role !== 'teacher') {
-        syncWithServer();
+      if (!currentToken || currentUserRef.current?.role === 'teacher') return;
+      if (isStudentLevelPortalUser(currentUserRef.current)) {
+        if (Date.now() - lastMeSyncAt >= 45000) {
+          syncWithServer(false);
+        }
+        return;
       }
+      syncWithServer();
     }, 8000);
 
     return () => {
@@ -1009,7 +1102,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     if (currentUser) {
       realtimeSync.start();
-      if (currentUser.role !== 'teacher') {
+      const isStudentLevel =
+        currentUser.role !== 'teacher' &&
+        Number(currentUser.level) !== 1 &&
+        Number(currentUser.level) !== 2 &&
+        (currentUser.role === 'student' || currentUser.role === 'class_representative' || Number(currentUser.level) === 3);
+      if (currentUser.role !== 'teacher' && !isStudentLevel) {
         syncWithServerRef.current?.(true);
       }
     }

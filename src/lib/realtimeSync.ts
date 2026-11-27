@@ -26,6 +26,7 @@ class RealtimeSyncManager {
   private backoffDelayMs = 2000;
   private broadcastChannel: BroadcastChannel | null = null;
   private isForceReloading = false;
+  private lastFallbackPollAt = 0;
 
   constructor() {
     if (typeof window !== 'undefined' && typeof BroadcastChannel !== 'undefined') {
@@ -179,6 +180,7 @@ class RealtimeSyncManager {
   public async pollChangesNow(): Promise<void> {
     const token = this.getAuthToken();
     if (!token) return;
+    this.lastFallbackPollAt = Date.now();
 
     try {
       const antiCacheTime = Date.now();
@@ -257,6 +259,12 @@ class RealtimeSyncManager {
       const token = this.getAuthToken();
       if (!token) {
         this.stop();
+        return;
+      }
+
+      const now = Date.now();
+      const isSseOpen = typeof EventSource !== 'undefined' && this.eventSource?.readyState === EventSource.OPEN;
+      if (isSseOpen && now - this.lastFallbackPollAt < 60000) {
         return;
       }
 

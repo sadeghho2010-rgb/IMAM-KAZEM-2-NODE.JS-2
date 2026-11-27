@@ -8,6 +8,7 @@ import {
   serverGetDocByCandidateIds,
   authorizeCollectionAccess,
   fetchBootstrapData,
+  fetchStudentPortalInitData,
   getRawExistingDocById,
   canUserReadDoc,
   isStudentLevelUser,
@@ -347,6 +348,39 @@ router.get('/data/teacher-portal-init', async (req: Request, res: Response) => {
     return res.status(500).json({
       success: false,
       message: 'خطا در بارگذاری اطلاعات پنل اساتید'
+    });
+  }
+});
+
+// GET /api/data/student-portal-init - Lightweight hydration exclusively for Student & Class Representative portals
+router.get('/data/student-portal-init', async (req: Request, res: Response) => {
+  const token = extractToken(req);
+  if (!token) {
+    return res.status(401).json({ success: false, message: 'احراز هویت الزامی است.' });
+  }
+
+  const verification = verifyAccessToken(token);
+  if (!verification.valid || !verification.decoded) {
+    return res.status(401).json({ success: false, message: 'نشست کاربری معتبر نیست یا منقضی شده است.' });
+  }
+
+  const callerUser = await getEnrichedCallerUser(verification.decoded);
+  if (!callerUser || (!isStudentLevelUser(callerUser) && Number(callerUser.level) > 2)) {
+    return res.status(403).json({ success: false, message: 'دسترسی به این بخش مجاز نیست.' });
+  }
+
+  try {
+    const data = await fetchStudentPortalInitData(callerUser);
+    return res.status(200).json({
+      success: true,
+      timestamp: Date.now(),
+      data
+    });
+  } catch (error: any) {
+    logger.error('[Student Portal Init Error]:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'خطا در بارگذاری اطلاعات پنل طلبه'
     });
   }
 });

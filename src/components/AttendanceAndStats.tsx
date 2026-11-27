@@ -565,19 +565,29 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     window.addEventListener('collection_change_workflow_items', handleDataEvent);
     window.addEventListener('collection_change_student_requests', handleDataEvent);
 
-    // Fast sync polling (every 3 seconds) for Education Manager to fetch fresh attendance, warning & leave request changes from cloud
-    const fastSyncTimer = setInterval(async () => {
-      try {
-        await Promise.all([
-          localDb.syncCollectionFromCloud('attendance', true),
-          localDb.syncCollectionFromCloud('workflow_items', true),
-          localDb.syncCollectionFromCloud('student_requests', false)
-        ]);
-        await loadData(false);
-      } catch (e) {
-        console.warn('[STORAGE_FAILURE] Fast sync polling error in AttendanceAndStats:', e);
-      }
-    }, 3000);
+    const isStudentOrRepLevel = Boolean(
+      currentUser &&
+      currentUser.role !== 'teacher' &&
+      Number(currentUser.level) !== 1 &&
+      Number(currentUser.level) !== 2 &&
+      (Number(currentUser.level) === 3 || currentUser.role === 'student' || currentUser.role === 'class_representative')
+    );
+
+    // Fast sync polling (every 3 seconds) only for Education Manager / Admin / Teachers; Level 3 relies on SSE events
+    const fastSyncTimer = isStudentOrRepLevel
+      ? null
+      : setInterval(async () => {
+          try {
+            await Promise.all([
+              localDb.syncCollectionFromCloud('attendance', true),
+              localDb.syncCollectionFromCloud('workflow_items', true),
+              localDb.syncCollectionFromCloud('student_requests', false)
+            ]);
+            await loadData(false);
+          } catch (e) {
+            console.warn('[STORAGE_FAILURE] Fast sync polling error in AttendanceAndStats:', e);
+          }
+        }, 3000);
 
     return () => {
       unsub();
@@ -588,7 +598,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       window.removeEventListener('collection_change_attendance', handleDataEvent);
       window.removeEventListener('collection_change_workflow_items', handleDataEvent);
       window.removeEventListener('collection_change_student_requests', handleDataEvent);
-      clearInterval(fastSyncTimer);
+      if (fastSyncTimer) clearInterval(fastSyncTimer);
     };
   }, []);
 

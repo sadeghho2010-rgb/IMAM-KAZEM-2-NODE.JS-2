@@ -97,6 +97,33 @@ export function isCurrentBrowserUserTeacher(): boolean {
   return Boolean(user && user.role === 'teacher');
 }
 
+export function isCurrentBrowserUserStudentLevel(): boolean {
+  const user = getCurrentBrowserUserFromStorage();
+  if (!user) return false;
+  if (user.role === 'teacher') return false;
+  if (Number(user.level) === 1 || Number(user.level) === 2) return false;
+  return user.role === 'student' || user.role === 'class_representative' || Number(user.level) === 3;
+}
+
+const STUDENT_INIT_COLLECTIONS = new Set<string>([
+  'programs',
+  'enrollments',
+  'course_enrollments',
+  'student_portal_access_config',
+  'attendance_settings',
+  'academic_calendar_periods',
+  'academic_holidays',
+  'academic_sub_periods',
+  'students',
+  'study_periods',
+  'study_daily_entries',
+  'periodic_study_logs',
+  'attendance',
+  'student_requests',
+  'announcements',
+  'announcement_dismissals'
+]);
+
 function canCurrentBrowserUserAccessAuditLogs(): boolean {
   const user = getCurrentBrowserUserFromStorage();
   if (!user) return true; // Keep queue intact if user profile hasn't hydrated yet
@@ -1078,6 +1105,8 @@ class LocalDatabase {
   private lastSyncTimestamps = new Map<string, number>();
   private isRealtimeSubscribed = false;
   private bootstrapInFlightPromise: Promise<{ success: boolean; totalRecords: number }> | null = null;
+  private studentInitInFlightPromise: Promise<{ success: boolean; totalRecords: number }> | null = null;
+  private lastStudentInitMeta: { username: string; timestamp: number; totalRecords: number } | null = null;
 
   public getAuthToken(): string | null {
     if (typeof window === 'undefined') return null;
@@ -1091,6 +1120,14 @@ class LocalDatabase {
   async syncCollectionFromCloud(collectionName: CollectionName, force = false): Promise<any[]> {
     if (typeof window === 'undefined') return [];
     const resolvedCol = this.resolveCollection(collectionName as string);
+
+    if (!force) {
+      if (this.studentInitInFlightPromise && STUDENT_INIT_COLLECTIONS.has(resolvedCol)) {
+        await this.studentInitInFlightPromise.catch(() => {});
+      } else if (this.bootstrapInFlightPromise) {
+        await this.bootstrapInFlightPromise.catch(() => {});
+      }
+    }
 
     const now = Date.now();
     const lastSync = this.lastSyncTimestamps.get(resolvedCol) || 0;
@@ -2247,10 +2284,12 @@ class LocalDatabase {
         const payload = await res.json().catch(() => null);
         if (payload?.success && payload?.data && typeof payload.data === 'object') {
           const mergedData: Record<string, any[]> = {};
+          const nowTs = Date.now();
           for (const [col, docs] of Object.entries(payload.data)) {
             if (Array.isArray(docs)) {
               const resolvedCol = this.resolveCollection(col);
               mergedData[resolvedCol] = await this.persistServerCollectionDocs(resolvedCol, docs, false);
+              this.lastSyncTimestamps.set(resolvedCol, nowTs);
             }
           }
           this.notify();
@@ -2264,11 +2303,147 @@ class LocalDatabase {
     return { success: false };
   }
 
+  // Purge duplicate document IDs from local IndexedDB & localStorage caches without issuing server DELETE requests
+  async purgeLocalDocsByIds(collectionName: CollectionName, ids: string[]): Promise<void> {
+    if (typeof window === 'undefined' || !Array.isArray(ids) || ids.length === 0) return;
+    const resolvedCol = this.resolveCollection(collectionName as string);
+    const idSet = new Set(ids.map(id => String(id)).filter(Boolean));
+    if (idSet.size === 0) return;
+
+    try {
+      const lsDocs = this.getLocalStorageDocs<any>(resolvedCol);
+      const filtered = lsDocs.filter(d => d && d.id && !idSet.has(String(d.id)));
+      localStorage.setItem(`fallback_idb_${resolvedCol}`, JSON.stringify(filtered));
+    } catch {}
+
+    try {
+      const db = await this.getDb();
+      if (db.objectStoreNames.contains(resolvedCol)) {
+        await new Promise<void>((resolve) => {
+          try {
+            const tx = db.transaction(resolvedCol, 'readwrite');
+            const store = tx.objectStore(resolvedCol);
+            for (const id of idSet) {
+              store.delete(id);
+            }
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => resolve();
+          } catch {
+            resolve();
+          }
+        });
+      }
+    } catch {}
+    this.notify();
+  }
+
+  // Lightweight single-request hydration for Student & Class Representative portals (Phase 1 core collections)
+  async syncStudentPortalInit(): Promise<{ success: boolean; totalRecords: number }> {
+    if (typeof window === 'undefined') return { success: false, totalRecords: 0 };
+
+    if (this.studentInitInFlightPromise) {
+      return this.studentInitInFlightPromise;
+    }
+
+    const browserUser = getCurrentBrowserUserFromStorage();
+    const currentUsername = String(browserUser?.username || '').trim().toUpperCase();
+    const now = Date.now();
+    if (
+      this.lastStudentInitMeta &&
+      currentUsername &&
+      this.lastStudentInitMeta.username === currentUsername &&
+      now - this.lastStudentInitMeta.timestamp < 4000
+    ) {
+      return { success: true, totalRecords: this.lastStudentInitMeta.totalRecords };
+    }
+
+    let currentPromise: Promise<{ success: boolean; totalRecords: number }>;
+    currentPromise = (async (): Promise<{ success: boolean; totalRecords: number }> => {
+      const makeHeaders = (tk: string | null): Record<string, string> => {
+        const h: Record<string, string> = {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        };
+        if (tk) h['Authorization'] = `Bearer ${tk}`;
+        return h;
+      };
+
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 20000);
+        let res: Response;
+        try {
+          res = await fetch(`/api/data/student-portal-init?_t=${Date.now()}`, {
+            method: 'GET',
+            headers: makeHeaders(this.getAuthToken()),
+            cache: 'no-store',
+            credentials: 'include',
+            signal: controller.signal
+          });
+        } finally {
+          clearTimeout(timeoutId);
+        }
+
+        if (res.status === 401 || res.status === 403) {
+          const refreshedToken = await tryRefreshToken();
+          if (refreshedToken) {
+            res = await fetch(`/api/data/student-portal-init?_t=${Date.now()}`, {
+              method: 'GET',
+              headers: makeHeaders(refreshedToken),
+              cache: 'no-store',
+              credentials: 'include'
+            });
+          }
+        }
+
+        if (res.ok) {
+          const payload = await res.json().catch(() => null);
+          if (payload?.success && payload?.data && typeof payload.data === 'object') {
+            let totalRecords = 0;
+            const syncNowTs = Date.now();
+            for (const [col, docs] of Object.entries(payload.data)) {
+              if (Array.isArray(docs)) {
+                const resolvedCol = this.resolveCollection(col);
+                const merged = await this.persistServerCollectionDocs(resolvedCol, docs, false);
+                this.syncedCollections.add(resolvedCol);
+                this.lastSyncTimestamps.set(resolvedCol, syncNowTs);
+                totalRecords += merged.length;
+              }
+            }
+            this.lastStudentInitMeta = {
+              username: currentUsername,
+              timestamp: Date.now(),
+              totalRecords
+            };
+            this.notify();
+            return { success: true, totalRecords };
+          }
+        }
+      } catch (e) {
+        console.warn('[StudentPortalInit] Fallback to standard bootstrap:', e);
+      }
+      return { success: false, totalRecords: 0 };
+    })().finally(() => {
+      if (this.studentInitInFlightPromise === currentPromise) {
+        this.studentInitInFlightPromise = null;
+      }
+    });
+
+    this.studentInitInFlightPromise = currentPromise;
+    return currentPromise;
+  }
+
   // Fetch authoritative collections from Server in 1 optimized bootstrap request on startup / login
   async loadAllCollectionsFromServer(): Promise<{ success: boolean; totalRecords: number }> {
     if (typeof window === 'undefined') return { success: false, totalRecords: 0 };
     if (isCurrentBrowserUserTeacher()) {
       return { success: true, totalRecords: 0 };
+    }
+    if (isCurrentBrowserUserStudentLevel()) {
+      const initResult = await this.syncStudentPortalInit();
+      if (initResult.success) {
+        return initResult;
+      }
     }
 
     if (this.bootstrapInFlightPromise) {
@@ -2294,6 +2469,7 @@ class LocalDatabase {
           if (payload.success && payload.data && typeof payload.data === 'object') {
             const pendingMap = getPendingLocalDocsMap();
             const idb = await this.getDb();
+            const syncNowTs = Date.now();
             for (const [col, docs] of Object.entries(payload.data)) {
               if (Array.isArray(docs)) {
                 const resolvedCol = this.resolveCollection(col);
@@ -2340,6 +2516,7 @@ class LocalDatabase {
                 } catch (e) {}
 
                 this.syncedCollections.add(resolvedCol);
+                this.lastSyncTimestamps.set(resolvedCol, syncNowTs);
                 totalRecords += authoritativeDocs.length;
               }
             }

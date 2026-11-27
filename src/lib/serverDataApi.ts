@@ -28,22 +28,30 @@ interface CacheEntry {
   timestamp: number;
 }
 const rawCollectionCache = new Map<string, CacheEntry>();
+const inFlightRawCollectionQueries = new Map<string, Promise<any[]>>();
 const RAW_CACHE_TTL_MS = 25 * 1000; // 25s TTL
 
 export function invalidateCollectionCache(collection?: string) {
   if (collection) {
     rawCollectionCache.delete(collection);
+    inFlightRawCollectionQueries.delete(collection);
     if (collection === 'users' || collection === 'all_users' || collection === 'system_users') {
       rawCollectionCache.delete('users');
       rawCollectionCache.delete('all_users');
       rawCollectionCache.delete('system_users');
+      inFlightRawCollectionQueries.delete('users');
+      inFlightRawCollectionQueries.delete('all_users');
+      inFlightRawCollectionQueries.delete('system_users');
     }
     if (collection === 'classrooms' || collection === 'classes') {
       rawCollectionCache.delete('classrooms');
       rawCollectionCache.delete('classes');
+      inFlightRawCollectionQueries.delete('classrooms');
+      inFlightRawCollectionQueries.delete('classes');
     }
   } else {
     rawCollectionCache.clear();
+    inFlightRawCollectionQueries.clear();
   }
 }
 
@@ -1464,7 +1472,7 @@ export async function serverDeleteDoc(collection: string, id: string, callerUser
   };
 }
 
-// Internal helper to retrieve raw collection data without filtering
+// Internal helper to retrieve raw collection data without filtering (with in-flight query coalescing)
 async function fetchRawCollectionData(collection: string): Promise<any[]> {
   const now = Date.now();
   const cached = rawCollectionCache.get(collection);
@@ -1472,41 +1480,281 @@ async function fetchRawCollectionData(collection: string): Promise<any[]> {
     return cached.data;
   }
 
-  let items: any[] = [];
-
-  // Fetch exclusively from MySQL repository
-  if (isMysqlConfigured) {
-    try {
-      const mysqlItems = await MysqlRepository.queryCollection(collection);
-      items = mysqlItems || [];
-
-      // Auto-purge any soft-deleted or inactive programs permanently from MySQL
-      if (collection === 'programs' && items.length > 0) {
-        const toPurge = items.filter((p: any) => p && (p.isDeleted === true || p.status === 'inactive' || p.status === 'deleted'));
-        if (toPurge.length > 0) {
-          for (const deadProg of toPurge) {
-            if (deadProg.id) {
-              try {
-                await MysqlRepository.deleteDocument('programs', String(deadProg.id));
-                notifyRealtimeChange('programs', String(deadProg.id), 'delete');
-              } catch (purgeErr) {}
-            }
-          }
-          items = items.filter((p: any) => !p || (p.isDeleted !== true && p.status !== 'inactive' && p.status !== 'deleted'));
-        }
-      }
-    } catch (mErr: any) {
-      console.error(`[MySQL Raw Query Error for ${collection}]:`, mErr?.message || mErr);
-      if (mErr?.stack) console.error(`[MySQL Stack Trace]:`, mErr.stack);
-      items = [];
-    }
-  } else {
-    console.error(`[MySQL Unconfigured Error]: Cannot fetch collection "${collection}" because MySQL is not configured.`);
-    items = [];
+  const existingInFlight = inFlightRawCollectionQueries.get(collection);
+  if (existingInFlight) {
+    return existingInFlight;
   }
 
-  rawCollectionCache.set(collection, { data: items, timestamp: now });
-  return items;
+  const loadPromise = (async (): Promise<any[]> => {
+    let items: any[] = [];
+
+    // Fetch exclusively from MySQL repository
+    if (isMysqlConfigured) {
+      try {
+        const mysqlItems = await MysqlRepository.queryCollection(collection);
+        items = mysqlItems || [];
+
+        // Auto-purge any soft-deleted or inactive programs permanently from MySQL
+        if (collection === 'programs' && items.length > 0) {
+          const toPurge = items.filter((p: any) => p && (p.isDeleted === true || p.status === 'inactive' || p.status === 'deleted'));
+          if (toPurge.length > 0) {
+            for (const deadProg of toPurge) {
+              if (deadProg.id) {
+                try {
+                  await MysqlRepository.deleteDocument('programs', String(deadProg.id));
+                  notifyRealtimeChange('programs', String(deadProg.id), 'delete');
+                } catch (purgeErr) {}
+              }
+            }
+            items = items.filter((p: any) => !p || (p.isDeleted !== true && p.status !== 'inactive' && p.status !== 'deleted'));
+          }
+        }
+      } catch (mErr: any) {
+        console.error(`[MySQL Raw Query Error for ${collection}]:`, mErr?.message || mErr);
+        if (mErr?.stack) console.error(`[MySQL Stack Trace]:`, mErr.stack);
+        items = [];
+      }
+    } else {
+      console.error(`[MySQL Unconfigured Error]: Cannot fetch collection "${collection}" because MySQL is not configured.`);
+      items = [];
+    }
+
+    rawCollectionCache.set(collection, { data: items, timestamp: Date.now() });
+    return items;
+  })().finally(() => {
+    if (inFlightRawCollectionQueries.get(collection) === loadPromise) {
+      inFlightRawCollectionQueries.delete(collection);
+    }
+  });
+
+  inFlightRawCollectionQueries.set(collection, loadPromise);
+  return loadPromise;
+}
+
+function normalizeRepClean(str?: string): string {
+  if (!str) return '';
+  return String(str).trim()
+    .replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d).toString())
+    .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧۸٩'.indexOf(d).toString())
+    .replace(/[ي]/g, 'ی').replace(/[ك]/g, 'ک')
+    .replace(/^(سید|شیخ|استاد)\s+/g, '')
+    .toLowerCase();
+}
+
+interface RepresentativeProgramContext {
+  isRepresentative: boolean;
+  repProgramIds: string[];
+  repProgramIdSet: Set<string>;
+  repProgramTitleSet: Set<string>;
+  repEnrolledStudentIds: Set<string>;
+}
+
+function isAttendanceDocInRepresentativeScope(doc: any, context?: any): boolean {
+  if (!doc || !context) return false;
+  const repIdSet: Set<string> | undefined = context.repProgramIdSet;
+  const repTitleSet: Set<string> | undefined = context.repProgramTitleSet;
+  const repIdsArr: string[] | undefined = context.repProgramIds;
+
+  if ((!repIdSet || repIdSet.size === 0) && (!repIdsArr || repIdsArr.length === 0) && (!repTitleSet || repTitleSet.size === 0)) {
+    return false;
+  }
+
+  const pId = String(doc.programId || doc.program_id || '').trim();
+  if (pId) {
+    if (repIdSet?.has(pId) || repIdsArr?.includes(pId)) {
+      return true;
+    }
+  }
+
+  const docId = String(doc.id || '').trim();
+  if (docId) {
+    const idsToCheck = repIdSet ? Array.from(repIdSet) : (repIdsArr || []);
+    for (const pid of idsToCheck) {
+      if (pid && docId.startsWith(`${pid}_`)) {
+        return true;
+      }
+    }
+  }
+
+  const rawTitle = String(doc.programTitle || '').trim();
+  if (rawTitle && repTitleSet && repTitleSet.has(normalizeRepClean(rawTitle))) {
+    return true;
+  }
+
+  return false;
+}
+
+async function resolveRepresentativeProgramContext(
+  user: any,
+  preloadedStudents?: any[]
+): Promise<RepresentativeProgramContext> {
+  const [programs, enrollments, studentsList] = await Promise.all([
+    fetchRawCollectionData('programs'),
+    fetchRawCollectionData('enrollments'),
+    preloadedStudents ? Promise.resolve(preloadedStudents) : fetchRawCollectionData('students')
+  ]);
+
+  const candidateIdsRaw = [
+    user.id,
+    user.userId,
+    user.studentId,
+    user.linkedStudentId,
+    user.username
+  ].filter(Boolean).map(x => normalizeRepClean(String(x))).filter(Boolean);
+
+  const candidateNamesRaw = [
+    user.name,
+    user.fullName,
+    user.studentName
+  ].filter(Boolean).map(x => normalizeRepClean(String(x))).filter(Boolean);
+
+  const uSid = normalizeRepClean(String(user.studentId || user.linkedStudentId || ''));
+  const uId = normalizeRepClean(String(user.id || user.userId || ''));
+  const uName = normalizeRepClean(String(user.username || ''));
+
+  const matchedStudent = (studentsList || []).find((s: any) => {
+    if (!s) return false;
+    const sId = normalizeRepClean(String(s.id || ''));
+    const sCode = normalizeRepClean(String(s.studentCode || ''));
+    const sNat = normalizeRepClean(String(s.nationalId || s.nationalCode || ''));
+    const sName = normalizeRepClean(String(s.name || s.fullName || ''));
+
+    if (uSid && (sId === uSid || sCode === uSid || sNat === uSid)) return true;
+    if (uId && sId === uId) return true;
+    if (uName && (sCode === uName || sNat === uName || sId === uName)) return true;
+    if (candidateNamesRaw.length > 0 && candidateNamesRaw.some(cn => cn && sName && (sName.includes(cn) || cn.includes(sName)))) return true;
+    return false;
+  });
+
+  const candidateIdsSet = new Set<string>(candidateIdsRaw);
+  const candidateNamesSet = new Set<string>(candidateNamesRaw);
+  if (matchedStudent) {
+    if (matchedStudent.id) candidateIdsSet.add(normalizeRepClean(String(matchedStudent.id)));
+    if (matchedStudent.studentCode) candidateIdsSet.add(normalizeRepClean(String(matchedStudent.studentCode)));
+    if (matchedStudent.nationalId) candidateIdsSet.add(normalizeRepClean(String(matchedStudent.nationalId)));
+    if (matchedStudent.nationalCode) candidateIdsSet.add(normalizeRepClean(String(matchedStudent.nationalCode)));
+    if (matchedStudent.name) candidateNamesSet.add(normalizeRepClean(String(matchedStudent.name)));
+  }
+
+  const candidateIds = Array.from(candidateIdsSet).filter(Boolean);
+  const candidateNames = Array.from(candidateNamesSet).filter(Boolean);
+  const managedClassId = user.managedClassId ? String(user.managedClassId).trim() : null;
+  const repProgramIdsFromUser = Array.isArray(user.representativeProgramIds)
+    ? user.representativeProgramIds.map((x: any) => String(x).trim()).filter(Boolean)
+    : [];
+
+  const activeProgs = (programs || []).filter((p: any) => p && p.status !== 'deleted' && !p.isDeleted);
+
+  // Exact match logic synchronized with RepresentativeQuickAttendanceView.tsx (lines 188-227) + explicit user links
+  const repPrograms = activeProgs.filter((p: any) => {
+    const pId = String(p.id).trim();
+    if (managedClassId && pId === managedClassId) return true;
+    if (repProgramIdsFromUser.includes(pId)) return true;
+
+    // 1. representativeStudentIds array on program (AUTHORITATIVE SOURCE OF TRUTH)
+    const repIds = Array.isArray(p.representativeStudentIds)
+      ? p.representativeStudentIds.map((x: any) => normalizeRepClean(String(x))).filter(Boolean)
+      : [];
+
+    if (repIds.length > 0) {
+      return candidateIds.some(cid => repIds.includes(cid));
+    }
+
+    // 2. Only if NO representativeStudentIds are set, fallback to clean exact match in representativeNames
+    const repNames = Array.isArray(p.representativeNames)
+      ? p.representativeNames.map((x: any) => normalizeRepClean(String(x)).replace(/\(.*?\)/g, '').trim()).filter(Boolean)
+      : [];
+    if (repNames.length > 0) {
+      if (candidateNames.some(cname => repNames.some(rn => rn === cname))) {
+        return true;
+      }
+    }
+
+    // 3. customRepresentative string (only if no repIds)
+    if (p.customRepresentative) {
+      const cust = normalizeRepClean(String(p.customRepresentative)).replace(/\(.*?\)/g, '').trim();
+      if (cust && candidateNames.some(cname => cust === cname)) {
+        return true;
+      }
+    }
+
+    return false;
+  });
+
+  // Legacy fallback ONLY when repPrograms is empty and user is explicitly designated representative for legacy classes without representativeStudentIds
+  if (repPrograms.length === 0 && (user.role === 'class_representative' || user.roleTitle?.includes('نماینده') || managedClassId)) {
+    const enrolledProgIds = new Set<string>();
+    (enrollments || []).forEach((enr: any) => {
+      const sid = normalizeRepClean(String(enr.studentId || enr.student_id || ''));
+      if (sid && candidateIds.includes(sid)) {
+        enrolledProgIds.add(String(enr.programId || enr.program_id || '').trim());
+      }
+    });
+    activeProgs.forEach((p: any) => {
+      const pid = String(p.id).trim();
+      const hasExplicitRepArray = Array.isArray(p.representativeStudentIds);
+      if (!hasExplicitRepArray) {
+        if (
+          enrolledProgIds.has(pid) ||
+          (Array.isArray(p.studentIds) && p.studentIds.some((sid: any) => candidateIds.includes(normalizeRepClean(String(sid)))))
+        ) {
+          repPrograms.push(p);
+        }
+      }
+    });
+  }
+
+  const repProgramIdSet = new Set<string>(repPrograms.map((p: any) => String(p.id).trim()).filter(Boolean));
+  if (managedClassId) repProgramIdSet.add(managedClassId);
+  repProgramIdsFromUser.forEach(pid => repProgramIdSet.add(pid));
+
+  const repProgramTitleSet = new Set<string>(
+    repPrograms
+      .map((p: any) => normalizeRepClean(String(p.title || '')))
+      .filter(Boolean)
+  );
+
+  const repEnrolledStudentIds = new Set<string>();
+  if (repProgramIdSet.size > 0) {
+    (enrollments || []).forEach((enr: any) => {
+      const pId = String(enr.programId || enr.program_id || '').trim();
+      if (repProgramIdSet.has(pId)) {
+        const sid = String(enr.studentId || enr.student_id || '').trim();
+        if (sid) repEnrolledStudentIds.add(sid);
+      }
+    });
+
+    repPrograms.forEach((p: any) => {
+      if (Array.isArray(p.studentIds)) {
+        p.studentIds.forEach((sid: any) => {
+          if (sid) repEnrolledStudentIds.add(String(sid).trim());
+        });
+      }
+      if (Array.isArray(p.representativeStudentIds)) {
+        p.representativeStudentIds.forEach((sid: any) => {
+          if (sid) repEnrolledStudentIds.add(String(sid).trim());
+        });
+      }
+    });
+
+    (studentsList || []).forEach((s: any) => {
+      const sid = String(s.id || '').trim();
+      if (repEnrolledStudentIds.has(sid)) {
+        if (s.studentCode) repEnrolledStudentIds.add(String(s.studentCode).trim().toUpperCase());
+        if (s.nationalId) repEnrolledStudentIds.add(String(s.nationalId).trim());
+      }
+    });
+
+    candidateIds.forEach(id => repEnrolledStudentIds.add(id));
+  }
+
+  return {
+    isRepresentative: repProgramIdSet.size > 0,
+    repProgramIds: Array.from(repProgramIdSet),
+    repProgramIdSet,
+    repProgramTitleSet,
+    repEnrolledStudentIds
+  };
 }
 
 // Get Single Document from Candidate IDs with Strict Role-Based Filtering
@@ -1715,17 +1963,19 @@ export function canUserReadDoc(user: any, collection: string, doc: any, context?
     );
   }
 
-  // 9. Attendance: Regular students can only read sessions containing their own record (and classmates' entries are stripped in query)
+  // 9. Attendance:
+  // - Admins, Level <= 2 staff, Teachers: full access
+  // - Student-level users (including Class Representatives):
+  //   * Full session logs for classes they represent (matched identically to RepresentativeQuickAttendanceView.tsx)
+  //   * Own student attendance entry (sanitized) for any other enrolled/self-reported classes
   if (collection === 'attendance') {
-    if (
-      Number(user.level) <= 2 ||
-      user.role === 'teacher' ||
-      isClassRepresentativeUser(user) ||
-      context?.isRepresentative
-    ) {
+    if (Number(user.level) <= 2 || user.role === 'teacher') {
       return true;
     }
-    if (isRegularStudentUser(user)) {
+    if (isStudentLevelUser(user)) {
+      if (isAttendanceDocInRepresentativeScope(doc, context)) {
+        return true;
+      }
       const candidates = context?.studentCandidates || getUserIdentityCandidates(user);
       if (doc.studentId && candidates.includes(String(doc.studentId).trim().toLowerCase())) {
         return true;
@@ -1811,9 +2061,10 @@ export function canUserReadDoc(user: any, collection: string, doc: any, context?
   return false;
 }
 
-function sanitizeAttendanceDocForUser(doc: any, user: any, candidates: string[]): any {
+function sanitizeAttendanceDocForUser(doc: any, user: any, candidates: string[], context?: any): any {
   if (!doc || !Array.isArray(doc.students)) return doc;
-  if (!isRegularStudentUser(user)) return doc;
+  if (Number(user?.level) <= 2 || user?.role === 'teacher') return doc;
+  if (isAttendanceDocInRepresentativeScope(doc, context)) return doc;
   const ownStudents = doc.students.filter((st: any) => isMatchingStudentEntry(st, candidates, user));
   return {
     ...doc,
@@ -1888,13 +2139,17 @@ export async function serverGetDocByCandidateIds(collection: string, candidateId
 
   // 4. Unified Security check: filter candidates using canUserReadDoc
   let context: any = {};
-  if (isRegularStudentUser(user)) {
+  if (isStudentLevelUser(user)) {
     const identity = await resolveAuthoritativeStudentIdentity(user);
     context.studentCandidates = identity.candidates;
+    if (collection === 'attendance') {
+      const repCtx = await resolveRepresentativeProgramContext(user);
+      context = { ...context, ...repCtx };
+    }
   }
   const allowedDocs = docs
     .filter(doc => canUserReadDoc(user, collection, doc, context))
-    .map(doc => collection === 'attendance' ? sanitizeAttendanceDocForUser(doc, user, context.studentCandidates || getUserIdentityCandidates(user)) : doc);
+    .map(doc => collection === 'attendance' ? sanitizeAttendanceDocForUser(doc, user, context.studentCandidates || getUserIdentityCandidates(user), context) : doc);
   if (allowedDocs.length === 0) return null;
 
   // Requirement 4: "۴. اگر هر دو کلید log_ و studylog_ وجود داشتند، log_ را برگردان."
@@ -1975,150 +2230,10 @@ export async function serverQueryCollection(collection: string, user?: any): Pro
       });
 
       context = { enrolledStudentIds, teacherGrades };
-    } else if (
-      user.role === 'class_representative' || 
-      user.roleTitle?.includes('نماینده') || 
-      user.managedClassId || 
-      user.level === 3 || 
-      user.role === 'student'
-    ) {
-      // Find represented programs
-      const programs = await fetchRawCollectionData('programs');
-      const enrollments = await fetchRawCollectionData('enrollments');
-      const studentsList = rawItems;
-
-      const candidateIds = [
-        user.studentId, 
-        user.linkedStudentId, 
-        user.id, 
-        user.userId, 
-        user.username
-      ].filter(Boolean).map(x => String(x).toLowerCase().trim());
-
-      const candidateNames = [
-        user.name, 
-        user.fullName, 
-        user.studentName
-      ].filter(Boolean).map(x => String(x).toLowerCase().trim());
-
-      // Match student record from students list to gather accurate student ID, studentCode, nationalId
-      const matchedStudent = studentsList.find((s: any) => {
-        const sId = String(s.id || '').toLowerCase().trim();
-        const sCode = String(s.studentCode || '').toLowerCase().trim();
-        const sNat = String(s.nationalId || s.nationalCode || '').toLowerCase().trim();
-        const sName = String(s.name || s.fullName || '').toLowerCase().trim();
-        const uName = String(user.username || '').toLowerCase().trim();
-        const uId = String(user.id || user.userId || '').toLowerCase().trim();
-        const uSid = String(user.studentId || user.linkedStudentId || '').toLowerCase().trim();
-
-        if (uSid && (sId === uSid || sCode === uSid || sNat === uSid)) return true;
-        if (uId && sId === uId) return true;
-        if (uName && (sCode === uName || sNat === uName || sId === uName)) return true;
-        if (candidateNames.length > 0 && candidateNames.some(cn => cn && (sName === cn || sName.includes(cn) || cn.includes(sName)))) return true;
-        return false;
-      });
-
-      if (matchedStudent) {
-        if (matchedStudent.id) candidateIds.push(String(matchedStudent.id).toLowerCase().trim());
-        if (matchedStudent.studentCode) candidateIds.push(String(matchedStudent.studentCode).toLowerCase().trim());
-        if (matchedStudent.nationalId) candidateIds.push(String(matchedStudent.nationalId).toLowerCase().trim());
-        if (matchedStudent.name) candidateNames.push(String(matchedStudent.name).toLowerCase().trim());
-      }
-
-      const managedClassId = user.managedClassId ? String(user.managedClassId).trim() : null;
-      const repProgramIdsFromUser = Array.isArray(user.representativeProgramIds) 
-        ? user.representativeProgramIds.map((x: any) => String(x).trim()) 
-        : [];
-
-      const repPrograms = programs.filter((p: any) => {
-        const pId = String(p.id).trim();
-        if (managedClassId && pId === managedClassId) return true;
-        if (repProgramIdsFromUser.includes(pId)) return true;
-
-        if (Array.isArray(p.representativeStudentIds) && p.representativeStudentIds.length > 0) {
-          if (p.representativeStudentIds.some((id: any) => candidateIds.includes(String(id).toLowerCase().trim()))) {
-            return true;
-          }
-        }
-        if (Array.isArray(p.representativeNames) && p.representativeNames.length > 0) {
-          if (p.representativeNames.some((n: string) => {
-            const norm = String(n).toLowerCase().trim();
-            return candidateNames.some(c => norm.includes(c) || c.includes(norm));
-          })) {
-            return true;
-          }
-        }
-        if (p.customRepresentative) {
-          const norm = String(p.customRepresentative).toLowerCase().trim();
-          if (candidateNames.some(c => norm.includes(c) || c.includes(norm))) {
-            return true;
-          }
-        }
-        return false;
-      });
-
-      // If user is designated as class_representative but program hasn't stored rep ID yet, match through their enrolled classes (ONLY for legacy programs without explicit representative configuration)
-      if (repPrograms.length === 0 && (user.role === 'class_representative' || user.roleTitle?.includes('نماینده') || managedClassId)) {
-        const enrolledProgIds = new Set<string>();
-        enrollments.forEach((enr: any) => {
-          const sid = String(enr.studentId || enr.student_id || '').toLowerCase().trim();
-          if (candidateIds.includes(sid)) {
-            enrolledProgIds.add(String(enr.programId || enr.program_id || '').trim());
-          }
-        });
-        programs.forEach((p: any) => {
-          const pid = String(p.id).trim();
-          const hasExplicitRepArray = Array.isArray(p.representativeStudentIds);
-          if (!hasExplicitRepArray) {
-            if (enrolledProgIds.has(pid) || (Array.isArray(p.studentIds) && p.studentIds.some((sid: any) => candidateIds.includes(String(sid).toLowerCase().trim())))) {
-              repPrograms.push(p);
-            }
-          }
-        });
-      }
-
-      if (repPrograms.length > 0) {
-        const repProgIds = new Set(repPrograms.map((p: any) => String(p.id).trim()));
-        if (managedClassId) repProgIds.add(managedClassId);
-
-        const repEnrolledStudentIds = new Set<string>();
-        enrollments.forEach((enr: any) => {
-          const pId = String(enr.programId || enr.program_id || '').trim();
-          if (repProgIds.has(pId)) {
-            const sid = String(enr.studentId || enr.student_id || '').trim();
-            if (sid) repEnrolledStudentIds.add(sid);
-          }
-        });
-
-        repPrograms.forEach((p: any) => {
-          if (Array.isArray(p.studentIds)) {
-            p.studentIds.forEach((sid: any) => {
-              if (sid) repEnrolledStudentIds.add(String(sid).trim());
-            });
-          }
-          if (Array.isArray(p.representativeStudentIds)) {
-            p.representativeStudentIds.forEach((sid: any) => {
-              if (sid) repEnrolledStudentIds.add(String(sid).trim());
-            });
-          }
-        });
-
-        // Also add nationalId and studentCode of enrolled students to ensure bulletproof matching
-        studentsList.forEach((s: any) => {
-          const sid = String(s.id || '').trim();
-          if (repEnrolledStudentIds.has(sid)) {
-            if (s.studentCode) repEnrolledStudentIds.add(String(s.studentCode).trim().toUpperCase());
-            if (s.nationalId) repEnrolledStudentIds.add(String(s.nationalId).trim());
-          }
-        });
-
-        candidateIds.forEach(id => repEnrolledStudentIds.add(id));
-
-        context = {
-          isRepresentative: true,
-          repEnrolledStudentIds,
-          repProgramIds: Array.from(repProgIds)
-        };
+    } else if (isStudentLevelUser(user)) {
+      const repCtx = await resolveRepresentativeProgramContext(user, rawItems);
+      if (repCtx.isRepresentative) {
+        context = { ...repCtx };
       }
     }
   }
@@ -2126,15 +2241,65 @@ export async function serverQueryCollection(collection: string, user?: any): Pro
   if (isStudentLevelUser(user) && collection !== 'students') {
     const identity = await resolveAuthoritativeStudentIdentity(user);
     context.studentCandidates = identity.candidates;
+    if (collection === 'attendance') {
+      const repCtx = await resolveRepresentativeProgramContext(user);
+      context = { ...context, ...repCtx };
+    }
   }
 
   // 5. Use the shared canUserReadDoc logic for absolute, bulletproof row-level filtering consistency
   const filtered = rawItems.filter(item => canUserReadDoc(user, collection, item, context));
-  if (collection === 'attendance' && isRegularStudentUser(user)) {
+  if (collection === 'attendance' && isStudentLevelUser(user)) {
     const candidates = context.studentCandidates || getUserIdentityCandidates(user);
-    return filtered.map(doc => sanitizeAttendanceDocForUser(doc, user, candidates));
+    return filtered.map(doc => sanitizeAttendanceDocForUser(doc, user, candidates, context));
   }
   return filtered;
+}
+
+export async function fetchStudentPortalInitData(callerUser: any): Promise<Record<string, any[]>> {
+  // Ordered batches so shared metadata & students warm rawCollectionCache cleanly before filtered collections run
+  const batch1Cols = [
+    'programs',
+    'enrollments',
+    'course_enrollments',
+    'student_portal_access_config',
+    'attendance_settings',
+    'academic_calendar_periods',
+    'academic_holidays',
+    'academic_sub_periods'
+  ];
+  const batch2Cols = ['students'];
+  const batch3Cols = [
+    'study_periods',
+    'study_daily_entries',
+    'periodic_study_logs',
+    'attendance',
+    'student_requests',
+    'announcements',
+    'announcement_dismissals'
+  ];
+
+  const result: Record<string, any[]> = {};
+  const runBatch = async (cols: string[]) => {
+    const batchResults = await Promise.all(
+      cols.map(async (col) => {
+        try {
+          const items = await serverQueryCollection(col, callerUser);
+          return { col, items };
+        } catch {
+          return { col, items: [] };
+        }
+      })
+    );
+    for (const { col, items } of batchResults) {
+      result[col] = items;
+    }
+  };
+
+  await runBatch(batch1Cols);
+  await runBatch(batch2Cols);
+  await runBatch(batch3Cols);
+  return result;
 }
 
 export async function fetchBootstrapData(callerUserOrLevel: any, userRole?: string): Promise<Record<string, any[]>> {

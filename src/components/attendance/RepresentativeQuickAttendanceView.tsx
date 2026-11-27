@@ -512,24 +512,22 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
       // Always save to canonical logId
       await localDb.setDoc('attendance', logId, sessionLog);
 
-      // Clean up any stale or duplicate logs for this exact class session in local database
-      const allDbLogs = await localDb.getDocs<AttendanceSessionLog>('attendance');
-      const duplicatesToDelete = allDbLogs.filter(l => {
-        if (!l || l.id === logId) return false;
-        const p1 = String(l.programId || (l as any).program_id || '').trim();
-        const p2 = String(currentProgram.id || '').trim();
-        const isProgMatch = p1 === p2 || (l.id && l.id.startsWith(`${p2}_`)) || (l.programTitle && l.programTitle === currentProgram.title);
-        if (!isProgMatch) return false;
-        const lClean = toEnglishDigits(normalizeShamsiDateStr(l.date)).replace(/[\/\-]/g, '');
-        return lClean === targetCleanDigits;
-      });
+      // Clean up any stale or duplicate logs for this exact class session in local cache only (serverSaveDoc already prunes duplicates on the server)
+      const allDbLogs = await localDb.getLocalDocsSnapshot<AttendanceSessionLog>('attendance');
+      const duplicateIds = allDbLogs
+        .filter(l => {
+          if (!l || !l.id || l.id === logId) return false;
+          const p1 = String(l.programId || (l as any).program_id || '').trim();
+          const p2 = String(currentProgram.id || '').trim();
+          const isProgMatch = p1 === p2 || (l.id && l.id.startsWith(`${p2}_`)) || (l.programTitle && l.programTitle === currentProgram.title);
+          if (!isProgMatch) return false;
+          const lClean = toEnglishDigits(normalizeShamsiDateStr(l.date)).replace(/[\/\-]/g, '');
+          return lClean === targetCleanDigits;
+        })
+        .map(d => String(d.id));
 
-      for (const dup of duplicatesToDelete) {
-        if (dup.id) {
-          try {
-            await localDb.deleteDoc('attendance', dup.id);
-          } catch (e) {}
-        }
+      if (duplicateIds.length > 0) {
+        await localDb.purgeLocalDocsByIds('attendance', duplicateIds);
       }
 
       // Update local state by removing duplicates and setting fresh sessionLog
